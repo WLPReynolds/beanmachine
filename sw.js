@@ -1,6 +1,6 @@
 // Lotto Lab service worker — network-first for the app shell so new deploys show up straight away,
 // falling back to cache when offline. Worker/API calls are never cached here (results live in IndexedDB).
-const CACHE = 'lottolab-v2026-10-21.21:10';
+const CACHE = 'lottolab-v2026-10-22.08:45';
 const SHELL = ['./', 'index.html', 'manifest.json', 'icon.svg', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png'];
 
 self.addEventListener('install', e => {

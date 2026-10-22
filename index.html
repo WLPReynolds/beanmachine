@@ -34,17 +34,32 @@ main{padding:0 16px}
 .balls{display:flex;flex-wrap:wrap;gap:7px;align-items:center}
 .plus{color:var(--muted);font-weight:800;margin:0 2px}
 /* Balls */
-.ball{--c:#2f86ff;--d:#0b3f8f;--s:44px;width:var(--s);height:var(--s);border-radius:50%;display:inline-grid;place-items:center;flex:none;border:0;padding:0;
+.ball{--c:#2f86ff;--d:#0b3f8f;width:var(--s,44px);height:var(--s,44px);border-radius:50%;display:inline-grid;place-items:center;flex:none;border:0;padding:0;
 background:radial-gradient(circle at 32% 26%,rgba(255,255,255,.95) 0 5%,rgba(255,255,255,0) 24%),radial-gradient(circle at 50% 50%,var(--c) 0 52%,var(--d) 100%);
 box-shadow:0 4px 10px rgba(0,0,0,.45),inset -3px -5px 8px rgba(0,0,0,.25)}
-.ball b{width:62%;height:62%;border-radius:50%;background:#fff;color:#1b1030;display:grid;place-items:center;font-weight:800;font-size:calc(var(--s)*.34);box-shadow:inset 0 1px 3px rgba(0,0,0,.3)}
+.ball b{width:62%;height:62%;border-radius:50%;background:#fff;color:#1b1030;display:grid;place-items:center;font-weight:800;font-size:calc(var(--s,44px)*.34);box-shadow:inset 0 1px 3px rgba(0,0,0,.3)}
 .c0{--c:#f3f3f8;--d:#8d8da8}.c1{--c:#2f86ff;--d:#0b3f8f}.c2{--c:#ff5fa8;--d:#a3185c}.c3{--c:#33cc66;--d:#137537}.c4{--c:#ffd431;--d:#b07d00}.c5{--c:#a066ff;--d:#4b1f9e}.em{--c:#3d6dff;--d:#152f8f}
 .sm{--s:31px}.lg{--s:52px}
 .starw{display:inline-block;filter:drop-shadow(0 3px 5px rgba(0,0,0,.5));flex:none}
-.star{--s:48px;width:var(--s);height:var(--s);display:grid;place-items:center;border:0;padding:0;background:linear-gradient(150deg,#fff6b8,#f7c948 45%,#c98b00);
+.star{width:calc(var(--s,44px)*1.1);height:calc(var(--s,44px)*1.1);display:grid;place-items:center;border:0;padding:0;background:linear-gradient(150deg,#fff6b8,#f7c948 45%,#c98b00);
 clip-path:polygon(50% 0,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%)}
-.star b{color:#4a2a00;font-weight:900;font-size:calc(var(--s)*.3);margin-top:12%}
-.star.sm{--s:33px}
+.star b{color:#4a2a00;font-weight:900;font-size:calc(var(--s,44px)*.33);margin-top:12%}
+.starw.sm,.star.sm{--s:30px}
+/* No-wrap rows that shrink the balls to fit the screen */
+.balls.nw{flex-wrap:nowrap;gap:5px}.balls.nw .plus{margin:0}
+.fit-lg{--s:min(50px,calc((100vw - 120px)/7.3))}
+.fit-md{--s:min(36px,calc((100vw - 120px)/7.3))}
+.fit{--s:max(20px,min(34px,calc((100vw - 185px)/7.3)))}
+.rr{display:flex;align-items:center;gap:8px;margin:6px 0}
+.rr .lbl{width:58px;flex:none;font-size:13px;color:var(--muted);font-weight:600}
+.grp{padding:8px 0 6px;border-bottom:1px solid var(--line)}.grp:last-child{border-bottom:0}
+.grp .dt{font-weight:700;font-size:14px;margin-bottom:2px}
+.hit{opacity:.35;filter:grayscale(.85)}.ball.hit b{text-decoration:line-through}
+.ball.new{box-shadow:0 0 0 3px var(--gold2),0 0 14px 4px rgba(247,201,72,.7)}
+.starw.new{filter:drop-shadow(0 0 3px #fff) drop-shadow(0 0 8px var(--gold))}
+.lhead{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px}
+.ibtn{border:1px solid var(--line);background:rgba(255,255,255,.08);color:var(--ink);border-radius:10px;padding:6px 10px;font-weight:700;font-size:13px}
+.arrow{color:var(--gold2);font-weight:800;font-size:13px;margin:10px 0 6px}
 .bonus{outline:2px dashed var(--gold);outline-offset:2px}
 .drop{animation:drop .6s cubic-bezier(.3,1.6,.5,1) both}
 @keyframes drop{from{transform:translateY(-60px) rotate(-200deg);opacity:0}to{transform:none;opacity:1}}
@@ -109,7 +124,7 @@ nav button.on{color:var(--gold2)}nav button.on span{filter:none;opacity:1}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION='v2026-10-21.21:10';
+const APP_VERSION='v2026-10-22.08:45';
 
 /* ---------- Game definitions ---------- */
 // "since" = first draw of the current format: Lotto went to 59 balls in Oct 2015; EuroMillions to 12 Lucky Stars in Sep 2016.
@@ -126,10 +141,13 @@ const DB={db:null,mem:{},
   set(k,v){this.mem[k]=v;if(!this.db)return Promise.resolve();return new Promise(res=>{try{const t=this.db.transaction('kv','readwrite');t.objectStore('kv').put(v,k);t.oncomplete=()=>res();t.onerror=()=>res()}catch(e){res()}})}
 };
 
-const settings=Object.assign({workerUrl:'',demo:true,avoidLast:true,worthIt:50000000,genLines:3},LS.get('settings',{}));
+const settings=Object.assign({workerUrl:'',demo:true,avoidLast:true,worthIt:50000000,genLines:3,freePlan:true,bonusCounts:true},LS.get('settings',{}));
+const myLines=Object.assign({lotto:[],euromillions:[]},LS.get('lines',{}));
+const saveLines=()=>LS.set('lines',myLines);
+const MAX_LINES=10;
 const saveSettings=()=>LS.set('settings',settings);
 const state={game:LS.get('game','lotto'),view:'latest',live:{lotto:[],euromillions:[]},meta:LS.get('meta',{}),
-  pick:{main:new Set(),extra:new Set()},gen:[],statWin:'all',statPool:'main',statSort:'num'};
+  pick:{main:new Set(),extra:new Set()},editing:null,gen:[],statWin:'all',statPool:'main',statSort:'num'};
 const demoCache={};
 
 /* ---------- Helpers ---------- */
@@ -160,6 +178,15 @@ function lineBalls(g,main,extra,o={}){
   if(extra&&extra.length){h+=`<span class="plus">+</span>`+extra.map((n,i)=>g.sepPool?ball(n,g,{star:true,sm:o.sm,cls:o.anim?'drop':'',attr:o.anim?`style="animation-delay:${(main.length+i)*90}ms"`:''}):ball(n,g,{sm:o.sm,bonus:true})).join('')}
   return `<div class="balls">${h}</div>`;
 }
+// One line of balls that never wraps; ball size comes from the fit class
+function rowBalls(g,main,extra,o={}){
+  const mk=(n,isX,i)=>{const c=[o.anim?'drop':'',o.mark?o.mark(n,isX):''].join(' '),a=o.anim?`style="animation-delay:${i*90}ms"`:'';
+    return isX&&g.sepPool?ball(n,g,{star:true,cls:c,attr:a}):ball(n,g,{bonus:isX,cls:c,attr:a})};
+  let h=main.map((n,i)=>mk(n,false,i)).join('');
+  if(extra&&extra.length)h+=`<span class="plus">+</span>`+extra.map((n,i)=>mk(n,true,main.length+i)).join('');
+  return `<div class="balls nw ${o.fit||'fit-lg'}">${h}</div>`;
+}
+const shortDate=s=>new Date(s+'T12:00:00').toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'});
 
 /* ---------- Data ---------- */
 function demoDraws(g){
@@ -195,7 +222,8 @@ async function api(path){
 }
 async function syncGame(g,full){
   let years;
-  if(full||!state.live[g.key].length){
+  if(settings.freePlan){const n=new Date();years=[n.getFullYear()];if(n.getMonth()===0)years.unshift(n.getFullYear()-1)}
+  else if(full||!state.live[g.key].length){
     const y=await api(`/years?game=${g.key}`);
     years=(y.years||[]).map(Number).filter(v=>v>=+g.since.slice(0,4)).sort((a,b)=>a-b);
   }else{const n=new Date();years=[n.getFullYear()];if(n.getMonth()===0)years.unshift(n.getFullYear()-1)}
@@ -256,10 +284,76 @@ function generate(g,ds){
   const extra=g.sepPool?pickDistinct(rand,g.extra,g.extraMax,new Set(settings.avoidLast?ls.flatMap(d=>d.extra):[])):[];
   return{...best,extra};
 }
+/* ---------- My lines: replace numbers that came up in the last draw ---------- */
+function lastDrawn(g,ds){
+  const ls=lastSet(ds),m=new Set(ls.flatMap(d=>d.main)),x=new Set(ls.flatMap(d=>d.extra));
+  if(!g.sepPool){if(settings.bonusCounts)x.forEach(n=>m.add(n));return{m,x:new Set(),ls}}
+  return{m,x,ls};
+}
+// Eligible numbers, least drawn first; keep everything tied with the 5th-lowest count
+function leastPool(g,ds,isX,excl){
+  const N=isX?g.extraMax:g.mainMax,cnt=Array(N+1).fill(0);
+  ds.forEach(d=>(isX?d.extra:d.main).forEach(n=>cnt[n]++));
+  const el=[];for(let n=1;n<=N;n++)if(!excl.has(n))el.push(n);
+  if(!el.length)return[];
+  el.sort((a,b)=>cnt[a]-cnt[b]);
+  const cut=cnt[el[Math.min(4,el.length-1)]];
+  return el.filter(n=>cnt[n]<=cut);
+}
+function suggestFor(g,ds,line){
+  const {m,x}=lastDrawn(g,ds);
+  const hitM=line.main.filter(n=>m.has(n)),hitX=g.sepPool?line.extra.filter(n=>x.has(n)):[];
+  if(!hitM.length&&!hitX.length)return{none:true,hitM,hitX};
+  const pick=(pool,k)=>{const p=[...pool],out=[];while(out.length<k&&p.length)out.push(p.splice(Math.floor(rand()*p.length),1)[0]);return out};
+  const newM=pick(leastPool(g,ds,false,new Set([...m,...line.main])),hitM.length);
+  const newX=g.sepPool?pick(leastPool(g,ds,true,new Set([...x,...line.extra])),hitX.length):[];
+  return{hitM,hitX,newM,newX,
+    main:[...line.main.filter(n=>!m.has(n)),...newM].sort((a,b)=>a-b),
+    extra:g.sepPool?[...line.extra.filter(n=>!x.has(n)),...newX].sort((a,b)=>a-b):[]};
+}
+// Suggestions are kept until the next draw arrives, so they don't change every time the screen redraws
+function lineSugg(g,ds,line){
+  const base=JSON.stringify([line.main,line.extra,settings.bonusCounts]);
+  if(!line.sugg||line.sugg.forDate!==ds[0].date||line.sugg.base!==base){line.sugg={...suggestFor(g,ds,line),forDate:ds[0].date,base};saveLines()}
+  return line.sugg;
+}
 function erf(x){const s=Math.sign(x);x=Math.abs(x);const t=1/(1+.3275911*x);return s*(1-((((1.061405429*t-1.453152027)*t+1.421413741)*t-.284496736)*t+.254829592)*t*Math.exp(-x*x))}
 const phi=z=>.5*(1+erf(z/Math.SQRT2));
 function chiP(x,k){const z=(Math.cbrt(x/k)-(1-2/(9*k)))/Math.sqrt(2/(9*k));return 1-phi(z)}
 function comb(n,k){if(k<0||k>n)return 0;let r=1;for(let i=1;i<=k;i++)r=r*(n-k+i)/i;return r}
+
+/* ---------- Backup ---------- */
+function exportBackup(){
+  const data={app:'lotto-lab',version:1,exported:new Date().toISOString(),
+    draws:{lotto:state.live.lotto,euromillions:state.live.euromillions},lines:myLines,
+    settings:{workerUrl:settings.workerUrl,worthIt:settings.worthIt,freePlan:settings.freePlan,bonusCounts:settings.bonusCounts,avoidLast:settings.avoidLast}};
+  const blob=new Blob([JSON.stringify(data)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`lotto-lab-backup-${iso(new Date())}.json`;
+  document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),5000);
+  LS.set('lastBackup',Date.now());toast('Backup saved to Downloads');
+}
+async function importBackup(file){
+  let data;try{data=JSON.parse(await file.text())}catch(e){toast('That file isn\'t a Lotto Lab backup');return}
+  if(data?.app!=='lotto-lab'||!data.draws){toast('That file isn\'t a Lotto Lab backup');return}
+  let addedD=0,addedL=0;
+  for(const g of Object.values(GAMES)){
+    // Draws: merge, so nothing already on this device is lost
+    const map=new Map(state.live[g.key].map(d=>[dKey(d),d]));
+    (data.draws[g.key]||[]).forEach(d=>{if(valid(g,d)&&!map.has(dKey(d))){map.set(dKey(d),d);addedD++}});
+    state.live[g.key]=sortDraws([...map.values()]);await DB.set('draws_'+g.key,state.live[g.key]);
+    // Lines: add any that aren't already here
+    const have=new Set(myLines[g.key].map(l=>JSON.stringify([l.main,l.extra])));
+    (data.lines?.[g.key]||[]).forEach(l=>{const k=JSON.stringify([l.main,l.extra]);
+      if(Array.isArray(l.main)&&l.main.length===g.main&&!have.has(k)&&myLines[g.key].length<MAX_LINES){myLines[g.key].push({main:l.main,extra:l.extra||[]});have.add(k);addedL++}});
+  }
+  saveLines();
+  const bs=data.settings||{};
+  if(!settings.workerUrl&&bs.workerUrl)settings.workerUrl=bs.workerUrl;
+  for(const k of ['worthIt','freePlan','bonusCounts','avoidLast'])if(bs[k]!=null)settings[k]=bs[k];
+  if(state.live.lotto.length||state.live.euromillions.length)settings.demo=false;
+  saveSettings();render();
+  toast(`Restored: ${addedD} new draws, ${addedL} new lines`);
+}
 
 /* ---------- Views ---------- */
 function renderHeader(){
@@ -272,10 +366,10 @@ function renderHeader(){
   <div class="seg">${Object.values(GAMES).map(x=>`<button data-game="${x.key}" class="${x.key===g.key?'on':''}">${x.name}</button>`).join('')}</div>${badge}`;
 }
 function renderNav(){
-  const items=[['latest','🎱','Latest'],['check','🔍','Check'],['gen','🎲','Generate'],['stats','📊','Stats'],['settings','⚙️','Settings']];
+  const items=[['latest','🎱','Latest'],['check','🔍','Check'],['gen','🎟️','My lines'],['stats','📊','Stats'],['settings','⚙️','Settings']];
   $('#nav').innerHTML=items.map(([k,i,l])=>`<button data-view="${k}" class="${state.view===k?'on':''}"><span>${i}</span>${l}</button>`).join('');
 }
-function noData(){return `<div class="card"><h2>No results yet</h2><p class="muted">Turn on sample data, or add your worker URL in Settings and tap “Sync all history”.</p></div>`}
+function noData(){return `<div class="card"><h2>No results yet</h2><p class="muted">Turn on sample data, or add your worker URL in Settings and tap “Get latest”.</p></div>`}
 
 function viewLatest(){
   const g=G(),ds=draws();if(!ds.length)return noData();
@@ -285,9 +379,17 @@ function viewLatest(){
     const worth=g.key==='euromillions'?(jp>=settings.worthIt?`🔥 Over your ${money(settings.worthIt)} line — worth winning!`:`😴 Under your ${money(settings.worthIt)} “worth winning” line`):'';
     jack=`<div class="card jack"><div class="muted small">${settings.demo?'Sample jackpot':'Jackpot'}</div><div class="big">${money(jp)}</div>${worth?`<div style="margin-top:6px;font-weight:700">${worth}</div>`:''}</div>`;
   }
-  return `${jack}<div class="card"><h2>${g.name} · ${fmtDate(d.date)}</h2>${[...ls].reverse().map(x=>`${x.round?`<h3>${x.round}</h3>`:''}${lineBalls(g,x.main,x.extra,{lg:true,anim:true})}`).join('')}
+  return `${jack}<div class="card"><h2>${g.name} · ${fmtDate(d.date)}</h2>${[...ls].reverse().map(x=>`${x.round?`<h3>${x.round}</h3>`:''}${rowBalls(g,x.main,x.extra,{fit:'fit-lg',anim:true})}`).join('')}
   ${nd?`<div class="note">Next draw: ${nd.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'short'})}</div>`:''}</div>
-  <div class="card"><h2>Recent draws</h2><div class="hist">${ds.slice(ls.length,ls.length+8).map(x=>`<div class="d"><span class="small muted" style="min-width:74px">${new Date(x.date+'T12:00').toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})}${rTag(x)}</span>${lineBalls(g,x.main,x.extra,{sm:true})}</div>`).join('')}</div></div>`;
+  <div class="card"><h2>Recent draws</h2>${recentHTML(g,ds)}</div>`;
+}
+function recentHTML(g,ds){
+  const dates=[...new Set(ds.map(x=>x.date))].slice(1,7);
+  return dates.map(dt=>{
+    const rs=ds.filter(x=>x.date===dt).sort((a,b)=>String(a.round||'').localeCompare(String(b.round||'')));
+    return `<div class="grp"><div class="dt">${shortDate(dt)}</div>${rs.map(x=>x.round
+      ?`<div class="rr"><span class="lbl">${x.round}</span>${rowBalls(g,x.main,x.extra,{fit:'fit'})}</div>`
+      :`<div class="rr">${rowBalls(g,x.main,x.extra,{fit:'fit-md'})}</div>`).join('')}</div>`}).join('');
 }
 
 function pickerGrid(g,pool){
@@ -298,7 +400,8 @@ function pickerGrid(g,pool){
 function viewCheck(){
   const g=G(),ds=draws(),pm=state.pick.main,pe=state.pick.extra;
   const needM=g.main-pm.size,needE=g.sepPool?g.extra-pe.size:0;
-  let h=`<div class="card"><h2>Check a line</h2><p class="small muted" style="margin-top:0">Tap ${g.main} numbers${g.sepPool?` and ${g.extra} Lucky Stars`:''}. ${needM>0?`<b style="color:var(--gold2)">${needM} more to go.</b>`:''}</p>${pickerGrid(g,'main')}
+  const ed=state.editing;
+  let h=`<div class="card"><h2>${ed!=null&&ed>=0?`Editing Line ${ed+1}`:ed===-1?'Add a line':'Check a line'}</h2><p class="small muted" style="margin-top:0">Tap ${g.main} numbers${g.sepPool?` and ${g.extra} Lucky Stars`:''}. ${needM>0?`<b style="color:var(--gold2)">${needM} more to go.</b>`:''}</p>${pickerGrid(g,'main')}
   ${g.sepPool?`<h3>Lucky Stars ${needE>0?`<span style="color:var(--gold2)">· ${needE} more</span>`:''}</h3>${pickerGrid(g,'extra')}`:''}
   <div class="row" style="margin-top:12px"><button class="btn ghost" data-act="clearpick">Clear</button><button class="btn ghost" data-act="randpick">Lucky dip</button></div></div>`;
   if(needM>0||needE>0||!ds.length)return h+(ds.length?'':noData());
@@ -309,7 +412,8 @@ function viewCheck(){
   const best=Math.max(...scored.map(s=>s.m)),bestDates=scored.filter(s=>s.m===best).slice(0,3);
   const dl=x=>fmtDate(x.date)+(x.round?` (${x.round})`:'');
   const ls=lastSet(ds),lastTxt=[...ls].reverse().map(x=>{const o=inter(main,x.main);return `${x.round?x.round+': ':''}${o} of your numbers`}).join(' · ');
-  h+=`<div class="card"><h2>Your line</h2>${lineBalls(g,main,extra)}<h3>Popularity</h3>${popHTML(p)}</div>`;
+  const saveLbl=ed!=null&&ed>=0?`💾 Update Line ${ed+1}`:'⭐ Save to my lines';
+  h+=`<div class="card"><h2>Your line</h2>${rowBalls(g,main,extra)}<button class="btn" style="margin-top:12px" data-act="saveline">${saveLbl}</button><h3>Popularity</h3>${popHTML(p)}</div>`;
   h+=`<div class="card"><h2>Ever drawn?</h2>${exact.length?
     `<p>🎉 Yes — this exact line came up on <b>${exact.map(dl).join(', ')}</b>.</p><p class="small muted">Its chance of coming up again is the same as any other line. But people do play past winning lines, so a repeat would probably be shared.</p>`:
     `<p>Never drawn as a full line in <b>${ds.length.toLocaleString()}</b> draws${g.roundsSince?' (each round counts as one)':''} since ${fmtDate(g.since)}.</p><p class="small muted">With ${comb(g.mainMax,g.main).toLocaleString()} possible lines, almost every line is in the same boat — it doesn't make it “due”.</p>`}
@@ -328,14 +432,38 @@ function viewCheck(){
   return h;
 }
 
-function viewGen(){
+function viewLines(){
+  const g=G(),ds=draws(),lines=myLines[g.key];
+  if(!ds.length)return noData();
+  const {ls}=lastDrawn(g,ds),when=shortDate(ls[0].date)+(ls.length>1?' (both rounds)':'');
+  let h=`<div class="card"><h2>My ${g.name} lines</h2><p class="small muted" style="margin:0">Numbers that came up on <b>${when}</b> are swapped for one of the least-drawn numbers${g.sepPool?' (stars for stars)':''}.${g.sepPool?'':settings.bonusCounts?' The bonus ball counts as drawn.':' The bonus ball is ignored.'}</p>
+  ${lines.length?'':`<p>No lines saved yet.</p>`}</div>`;
+  lines.forEach((l,i)=>{
+    const s=lineSugg(g,ds,l),hm=new Set(s.hitM),hx=new Set(s.hitX),p=popularity(g,l.main,ds);
+    h+=`<div class="card"><div class="lhead"><b>Line ${i+1}</b><div class="row"><button class="ibtn" data-act="checkline" data-i="${i}">Check</button><button class="ibtn" data-act="editline" data-i="${i}">Edit</button><button class="ibtn" data-act="delline" data-i="${i}">✕</button></div></div>
+    ${rowBalls(g,l.main,l.extra,{mark:(n,isX)=>(isX?hx:hm).has(n)?'hit':''})}`;
+    if(s.none)h+=`<p class="small" style="margin:10px 0 0">✅ None came up on ${shortDate(ls[0].date)} — keep it as it is.</p>`;
+    else{
+      const nm=new Set(s.newM),nx=new Set(s.newX),gone=[...s.hitM,...s.hitX.map(n=>n+'★')];
+      h+=`<div class="arrow">↓ ${gone.join(', ')} came up — for the next draw:</div>
+      ${rowBalls(g,s.main,s.extra,{mark:(n,isX)=>(isX?nx:nm).has(n)?'new':''})}
+      ${s.newM.length+s.newX.length<s.hitM.length+s.hitX.length?`<p class="small" style="color:var(--warn)">Not enough numbers left to replace them all.</p>`:''}
+      <div class="row" style="margin-top:12px"><button class="btn" data-act="acceptline" data-i="${i}">Use these</button><button class="btn ghost" data-act="rerollline" data-i="${i}">🎲 Re-roll</button></div>`;
+    }
+    h+=`<div class="note">Popularity ${p.score}/100 · <span class="pill p-${p.band}">${{low:'Low',med:'Medium',high:'High'}[p.band]}</span></div></div>`;
+  });
+  if(lines.length<MAX_LINES)h+=`<button class="btn block" data-act="addline">＋ Add a line</button>`;
+  h+=`<div class="note">Replacements come from the least-drawn numbers across the ${ds.length} draws stored so far${settings.freePlan?' — this pool gets more meaningful as history builds up':''}.</div>`;
+  return h+viewGen(true);
+}
+function viewGen(embedded){
   const g=G(),ds=draws();if(!ds.length)return noData();
-  let h=`<div class="card"><h2>Low-popularity lines</h2><p class="small muted" style="margin-top:0">Random lines, steered away from patterns lots of people pick. Same odds of winning — just less chance of sharing.</p>
+  let h=`<div class="card" style="margin-top:22px"><h2>Low-popularity lines</h2><p class="small muted" style="margin-top:0">Random lines, steered away from patterns lots of people pick. Same odds of winning — just less chance of sharing.</p>
   <div class="tog"><span>Avoid the last draw's numbers<div class="small muted">Your Saturday → Wednesday rule${g.roundsSince?' (both rounds)':''}</div></span><label class="sw"><input type="checkbox" data-set="avoidLast" ${settings.avoidLast?'checked':''}><span></span></label></div>
   <label class="f">Lines</label><div class="chips">${[1,2,3,4,5].map(n=>`<button class="chip ${settings.genLines===n?'on':''}" data-lines="${n}">${n}</button>`).join('')}</div>
   <button class="btn block" style="margin-top:14px" data-act="spin">🎲 Spin the machine</button></div>`;
-  state.gen.forEach((l,i)=>{h+=`<div class="card"><div class="row" style="justify-content:space-between;margin-bottom:10px"><b>Line ${i+1}</b><span class="pill p-${l.p.band}">${l.p.score}/100</span></div>${lineBalls(g,l.main,l.extra,{anim:l.fresh})}
-  <button class="btn ghost" style="margin-top:12px" data-act="checkgen" data-i="${i}">Check this line →</button></div>`;l.fresh=false});
+  state.gen.forEach((l,i)=>{h+=`<div class="card"><div class="row" style="justify-content:space-between;margin-bottom:10px"><b>Line ${i+1}</b><span class="pill p-${l.p.band}">${l.p.score}/100</span></div>${rowBalls(g,l.main,l.extra,{anim:l.fresh})}
+  <div class="row" style="margin-top:12px"><button class="btn ghost" data-act="checkgen" data-i="${i}">Check →</button><button class="btn ghost" data-act="keepgen" data-i="${i}">⭐ Save to my lines</button></div></div>`;l.fresh=false});
   return h;
 }
 
@@ -379,15 +507,21 @@ function viewSettings(){
   return `<div class="card"><h2>Data</h2>
   <div class="tog"><span>Use sample data<div class="small muted">Simulated draws for trying things out</div></span><label class="sw"><input type="checkbox" data-set="demo" ${settings.demo?'checked':''}><span></span></label></div>
   <label class="f">Worker URL</label><input type="url" id="wurl" placeholder="https://lotto-lab.yourname.workers.dev" value="${esc(settings.workerUrl)}">
-  <div class="row" style="margin-top:10px"><button class="btn ghost" data-act="saveurl">Save</button><button class="btn ghost" data-act="syncfull">Sync all history</button><button class="btn ghost" data-act="sync">Get latest</button></div>
-  <div class="note">${state.meta.remaining?`API calls left: <b>${state.meta.remaining.n}</b>${state.meta.remaining.limit?' / '+state.meta.remaining.limit:''} (as of ${new Date(state.meta.remaining.at).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}). The free plan allows 100 a month and one month of history. `:''}Calls made this month: <b>${callsThisMonth()}</b>. A full sync uses about ${2+(new Date().getFullYear()-2015+1)+(new Date().getFullYear()-2016+1)} calls; after that, each update uses 1–2 per game.</div></div>
+  <div class="row" style="margin-top:10px"><button class="btn ghost" data-act="saveurl">Save</button>${settings.freePlan?'':'<button class="btn ghost" data-act="syncfull">Sync all history</button>'}<button class="btn ghost" data-act="sync">Get latest</button></div>
+  <div class="tog"><span>Free API plan<div class="small muted">Only fetches this year's results (1–2 calls per game). History builds up on this device over time.</div></span><label class="sw"><input type="checkbox" data-set="freePlan" ${settings.freePlan?'checked':''}><span></span></label></div>
+  <div class="note">${state.meta.remaining?`API calls left: <b>${state.meta.remaining.n}</b>${state.meta.remaining.limit?' / '+state.meta.remaining.limit:''} (as of ${new Date(state.meta.remaining.at).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}). The free plan allows 100 a month and one month of history. `:''}Calls made this month: <b>${callsThisMonth()}</b>.${settings.freePlan?' Each update uses 1–2 calls per game.':` A full sync uses about ${2+(new Date().getFullYear()-2015+1)+(new Date().getFullYear()-2016+1)} calls.`}</div></div>
+  <div class="card"><h2>Lotto</h2><div class="tog"><span>Bonus ball counts as drawn<div class="small muted">For My lines: if the bonus is one of your numbers, it gets swapped too</div></span><label class="sw"><input type="checkbox" data-set="bonusCounts" ${settings.bonusCounts?'checked':''}><span></span></label></div></div>
   <div class="card"><h2>EuroMillions</h2><label class="f">“Worth winning” threshold (£)</label><input type="number" inputmode="numeric" id="worth" value="${settings.worthIt}"><button class="btn ghost" style="margin-top:10px" data-act="saveworth">Save</button></div>
+  <div class="card"><h2>Backup</h2><p class="small muted" style="margin-top:0">Saves your stored results, lines and settings to a file. Restoring merges it in, so nothing already here is lost — handy for moving between Chrome and Firefox.</p>
+  <div class="row"><button class="btn ghost" data-act="backup">⬇️ Back up</button><button class="btn ghost" data-act="restore">⬆️ Restore</button></div>
+  <input type="file" id="restoreFile" accept=".json,application/json" style="display:none">
+  <div class="note">${LS.get('lastBackup',0)?'Last backup: '+new Date(LS.get('lastBackup',0)).toLocaleString('en-GB',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}):'Not backed up yet.'} Stored: ${state.live.lotto.length} Lotto and ${state.live.euromillions.length} EuroMillions draws.</div></div>
   <div class="card"><h2>About</h2><p class="small muted" style="margin-top:0">Lotto Lab ${APP_VERSION}. Statistics are for entertainment — every line has the same chance in every draw. Please play responsibly.</p><button class="btn ghost" data-act="wipe">Clear stored results</button></div>`;
 }
 
 function render(){
   renderHeader();renderNav();
-  const v={latest:viewLatest,check:viewCheck,gen:viewGen,stats:viewStats,settings:viewSettings}[state.view];
+  const v={latest:viewLatest,check:viewCheck,gen:viewLines,stats:viewStats,settings:viewSettings}[state.view];
   $('#view').innerHTML=v();
 }
 
@@ -395,8 +529,8 @@ function render(){
 document.addEventListener('click',async e=>{
   const t=e.target.closest('[data-game],[data-view],[data-pick],[data-act],[data-lines],[data-win],[data-pool],[data-sort]');if(!t)return;
   const g=G(),ds=draws();
-  if(t.dataset.game){state.game=t.dataset.game;LS.set('game',state.game);state.pick={main:new Set(),extra:new Set()};state.gen=[];state.statPool='main'}
-  else if(t.dataset.view){state.view=t.dataset.view;scrollTo(0,0)}
+  if(t.dataset.game){state.game=t.dataset.game;LS.set('game',state.game);state.pick={main:new Set(),extra:new Set()};state.gen=[];state.statPool='main';state.editing=null}
+  else if(t.dataset.view){state.view=t.dataset.view;state.editing=null;scrollTo(0,0)}
   else if(t.dataset.pick){const pool=t.dataset.pick,n=+t.dataset.n,s=state.pick[pool],lim=pool==='main'?g.main:g.extra;
     if(s.has(n))s.delete(n);else if(s.size<lim)s.add(n);else{toast(`That's ${lim} already — tap one to remove it`);return}
     const y=scrollY;render();scrollTo(0,y);if(state.pick.main.size===g.main&&(!g.sepPool||state.pick.extra.size===g.extra))setTimeout(()=>document.querySelectorAll('.card')[1]?.scrollIntoView({behavior:'smooth'}),50);return}
@@ -409,6 +543,21 @@ document.addEventListener('click',async e=>{
     if(a==='randpick')state.pick={main:new Set(pickDistinct(rand,g.main,g.mainMax)),extra:new Set(g.sepPool?pickDistinct(rand,g.extra,g.extraMax):[])};
     if(a==='spin'){state.gen=Array.from({length:settings.genLines},()=>({...generate(g,ds),fresh:true}))}
     if(a==='checkgen'){const l=state.gen[+t.dataset.i];state.pick={main:new Set(l.main),extra:new Set(l.extra)};state.view='check';render();setTimeout(()=>document.querySelectorAll('.card')[1]?.scrollIntoView({behavior:'smooth'}),50);return}
+    const L=myLines[g.key],li=+t.dataset.i,toCheck=()=>{state.view='check';render();scrollTo(0,0)};
+    if(a==='addline'){if(L.length>=MAX_LINES){toast(`Up to ${MAX_LINES} lines`);return}state.editing=-1;state.pick={main:new Set(),extra:new Set()};toCheck();return}
+    if(a==='editline'||a==='checkline'){state.editing=a==='editline'?li:null;state.pick={main:new Set(L[li].main),extra:new Set(L[li].extra)};toCheck();return}
+    if(a==='delline'){if(!confirm(`Delete Line ${li+1}?`))return;L.splice(li,1);saveLines()}
+    if(a==='acceptline'){const s=L[li].sugg;if(s&&!s.none){L[li]={main:s.main,extra:s.extra};saveLines();toast('Line updated ✨')}}
+    if(a==='rerollline'){delete L[li].sugg;saveLines()}
+    if(a==='keepgen'){const l=state.gen[li];if(L.length>=MAX_LINES){toast(`Up to ${MAX_LINES} lines`);return}L.push({main:l.main,extra:l.extra});saveLines();toast(`Saved as Line ${L.length}`)}
+    if(a==='saveline'){
+      const line={main:[...state.pick.main].sort((x,y)=>x-y),extra:[...state.pick.extra].sort((x,y)=>x-y)};
+      if(state.editing!=null&&state.editing>=0){L[state.editing]=line;toast(`Line ${state.editing+1} updated`)}
+      else{if(L.length>=MAX_LINES){toast(`Up to ${MAX_LINES} lines`);return}L.push(line);toast(`Saved as Line ${L.length}`)}
+      saveLines();state.editing=null;state.view='gen';scrollTo(0,0);
+    }
+    if(a==='backup'){exportBackup();render();return}
+    if(a==='restore'){$('#restoreFile').click();return}
     if(a==='saveurl'){settings.workerUrl=$('#wurl').value.trim();saveSettings();toast('Saved')}
     if(a==='saveworth'){const v=+$('#worth').value;if(v>0){settings.worthIt=v;saveSettings();toast('Saved')}}
     if(a==='sync'||a==='syncfull'){settings.workerUrl=$('#wurl')?.value.trim()||settings.workerUrl;saveSettings();toast('Fetching…');await syncAll(a==='syncfull');return}
@@ -416,8 +565,10 @@ document.addEventListener('click',async e=>{
   }
   render();
 });
-document.addEventListener('change',e=>{const k=e.target.dataset.set;if(!k)return;settings[k]=e.target.checked;saveSettings();
-  if(k==='demo'){state.gen=[];if(!settings.demo&&!draws().length)toast('Add your worker URL, then tap “Sync all history”')}render()});
+document.addEventListener('change',e=>{
+  if(e.target.id==='restoreFile'){const f=e.target.files[0];if(f)importBackup(f);e.target.value='';return}
+  const k=e.target.dataset.set;if(!k)return;settings[k]=e.target.checked;saveSettings();
+  if(k==='demo'){state.gen=[];if(!settings.demo&&!draws().length)toast('Add your worker URL, then tap “Get latest”')}render()});
 
 /* ---------- Boot ---------- */
 (async()=>{

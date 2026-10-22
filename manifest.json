@@ -1,9 +1,10 @@
 {
-  "id": "https://wlpreynolds.github.io/lotto-lab/?v=2",
+  "id": "./index.html?app=lotto-lab",
   "name": "Lotto Lab",
   "short_name": "Lotto Lab",
-  "start_url": "https://wlpreynolds.github.io/lotto-lab/index.html?v=2",
-  "scope": "https://wlpreynolds.github.io/lotto-lab/",
+  "description": "Fun statistics for UK Lotto and EuroMillions",
+  "start_url": "./index.html",
+  "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#1a0b3d",
@@ -26,6 +27,12 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
+    },
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
     }
   ]
 }
