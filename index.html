@@ -124,7 +124,7 @@ nav button.on{color:var(--gold2)}nav button.on span{filter:none;opacity:1}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION='v2026-10-22.08:45';
+const APP_VERSION='v2026-10-24.16:30';
 
 /* ---------- Game definitions ---------- */
 // "since" = first draw of the current format: Lotto went to 59 balls in Oct 2015; EuroMillions to 12 Lucky Stars in Sep 2016.
@@ -213,14 +213,28 @@ function valid(g,d){return d&&/^\d{4}-\d{2}-\d{2}$/.test(d.date)&&Array.isArray(
 
 function callsThisMonth(){const m=iso(new Date()).slice(0,7);const c=LS.get('calls',{});return c[m]||0}
 function bumpCalls(){const m=iso(new Date()).slice(0,7);const c=LS.get('calls',{});c[m]=(c[m]||0)+1;LS.set('calls',c)}
-async function api(path){
+// costsCall: true only for routes that go straight to the lottery API (not the Worker's stored history)
+async function api(path,costsCall=true){
   if(!settings.workerUrl)throw new Error('No worker URL set');
-  const r=await fetch(settings.workerUrl.replace(/\/$/,'')+path);bumpCalls();
+  const r=await fetch(settings.workerUrl.replace(/\/$/,'')+path);if(costsCall)bumpCalls();
   const j=await r.json().catch(()=>({}));
-  if(j.remaining!=null){state.meta.remaining={n:j.remaining,limit:j.limit,at:Date.now()};LS.set('meta',state.meta)}
+  if(j.remaining!=null){state.meta.remaining={n:j.remaining,limit:j.limit,at:j.rateAt?Date.parse(j.rateAt):Date.now()};LS.set('meta',state.meta)}
   if(!r.ok)throw new Error(j.error||('HTTP '+r.status));return j;
 }
 async function syncGame(g,full){
+  // Preferred: the Worker's stored history (built up by its schedule). Costs no API calls.
+  try{
+    const r=await api(`/history?game=${g.key}`,false);
+    const map=new Map(state.live[g.key].map(d=>[dKey(d),d]));
+    (r.draws||[]).forEach(d=>{if(valid(g,d))map.set(dKey(d),d)});
+    state.live[g.key]=sortDraws([...map.values()]);
+    await DB.set('draws_'+g.key,state.live[g.key]);
+    state.meta[g.key]={lastSync:Date.now(),nextJackpot:r.nextJackpot??state.meta[g.key]?.nextJackpot??null,store:{updatedAt:r.updatedAt,lastRun:r.lastRun,count:(r.draws||[]).length}};
+    LS.set('meta',state.meta);return;
+  }catch(e){
+    // Older Worker (no /history) or KV not set up: fall back to asking the API directly
+    if(!/not found|KV not set up/i.test(e.message))throw e;
+  }
   let years;
   if(settings.freePlan){const n=new Date();years=[n.getFullYear()];if(n.getMonth()===0)years.unshift(n.getFullYear()-1)}
   else if(full||!state.live[g.key].length){
@@ -234,17 +248,17 @@ async function syncGame(g,full){
   await DB.set('draws_'+g.key,state.live[g.key]);
   state.meta[g.key]={lastSync:Date.now(),nextJackpot:nextJackpot??state.meta[g.key]?.nextJackpot??null};LS.set('meta',state.meta);
 }
-async function syncAll(full){
-  try{for(const g of Object.values(GAMES))await syncGame(g,full);toast('Results updated ✨')}
-  catch(e){toast('Update failed: '+e.message)}
+async function syncAll(full,quiet){
+  try{for(const g of Object.values(GAMES))await syncGame(g,full);if(!quiet)toast('Results updated ✨')}
+  catch(e){if(!quiet)toast('Update failed: '+e.message)}
   render();
 }
 function lastResultsTime(g){const now=new Date();for(let i=0;i<8;i++){const c=new Date(now);c.setDate(now.getDate()-i);c.setHours(22,30,0,0);if(g.days.includes(c.getDay())&&c<=now)return c.getTime()}return 0}
 function nextDraw(g){const now=new Date();for(let i=0;i<8;i++){const c=new Date(now);c.setDate(now.getDate()+i);c.setHours(20,0,0,0);if(g.days.includes(c.getDay())&&c>now)return c}}
 async function maybeAutoSync(){
   if(settings.demo||!settings.workerUrl)return;
-  const stale=Object.values(GAMES).some(g=>(state.meta[g.key]?.lastSync||0)<lastResultsTime(g));
-  if(stale)await syncAll(false);
+  const last=Math.min(...Object.values(GAMES).map(g=>state.meta[g.key]?.lastSync||0));
+  if(Date.now()-last>5*60e3)await syncAll(false,true);
 }
 
 /* ---------- Analysis ---------- */
@@ -502,14 +516,21 @@ function viewStats(){
   return h;
 }
 
+function storeNote(){
+  const st=Object.values(GAMES).map(g=>({g,s:state.meta[g.key]?.store}));
+  if(!st.some(x=>x.s))return `Calls made directly from this device this month: <b>${callsThisMonth()}</b>.`;
+  const when=t=>t?new Date(t).toLocaleString('en-GB',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'never';
+  return `<br>Results come from your Worker, which fetches them itself after each draw (about 35 API calls a month). Opening the app or tapping <b>Get latest</b> costs no API calls.`+
+    st.map(({g,s})=>!s?'':`<br>${g.name}: ${s.count} draws stored, last fetched ${when(s.updatedAt)}${s.lastRun&&!s.lastRun.ok?` · <span style="color:var(--warn)">last attempt failed (${s.lastRun.error}) — it'll retry at the next scheduled run</span>`:''}`).join('');
+}
 function viewSettings(){
   const esc=s=>String(s).replace(/[&"<>]/g,c=>({'&':'&amp;','"':'&quot;','<':'&lt;','>':'&gt;'}[c]));
   return `<div class="card"><h2>Data</h2>
   <div class="tog"><span>Use sample data<div class="small muted">Simulated draws for trying things out</div></span><label class="sw"><input type="checkbox" data-set="demo" ${settings.demo?'checked':''}><span></span></label></div>
   <label class="f">Worker URL</label><input type="url" id="wurl" placeholder="https://lotto-lab.yourname.workers.dev" value="${esc(settings.workerUrl)}">
   <div class="row" style="margin-top:10px"><button class="btn ghost" data-act="saveurl">Save</button>${settings.freePlan?'':'<button class="btn ghost" data-act="syncfull">Sync all history</button>'}<button class="btn ghost" data-act="sync">Get latest</button></div>
-  <div class="tog"><span>Free API plan<div class="small muted">Only fetches this year's results (1–2 calls per game). History builds up on this device over time.</div></span><label class="sw"><input type="checkbox" data-set="freePlan" ${settings.freePlan?'checked':''}><span></span></label></div>
-  <div class="note">${state.meta.remaining?`API calls left: <b>${state.meta.remaining.n}</b>${state.meta.remaining.limit?' / '+state.meta.remaining.limit:''} (as of ${new Date(state.meta.remaining.at).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}). The free plan allows 100 a month and one month of history. `:''}Calls made this month: <b>${callsThisMonth()}</b>.${settings.freePlan?' Each update uses 1–2 calls per game.':` A full sync uses about ${2+(new Date().getFullYear()-2015+1)+(new Date().getFullYear()-2016+1)} calls.`}</div></div>
+  <div class="tog"><span>Free API plan<div class="small muted">Only matters if the Worker's store isn't set up: then each update fetches this year's results directly (1–2 calls per game).</div></span><label class="sw"><input type="checkbox" data-set="freePlan" ${settings.freePlan?'checked':''}><span></span></label></div>
+  <div class="note">${state.meta.remaining?`API calls left: <b>${state.meta.remaining.n}</b>${state.meta.remaining.limit?' / '+state.meta.remaining.limit:''} (as of ${new Date(state.meta.remaining.at).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}). The free plan allows 100 a month and one month of history. `:''}${storeNote()}</div></div>
   <div class="card"><h2>Lotto</h2><div class="tog"><span>Bonus ball counts as drawn<div class="small muted">For My lines: if the bonus is one of your numbers, it gets swapped too</div></span><label class="sw"><input type="checkbox" data-set="bonusCounts" ${settings.bonusCounts?'checked':''}><span></span></label></div></div>
   <div class="card"><h2>EuroMillions</h2><label class="f">“Worth winning” threshold (£)</label><input type="number" inputmode="numeric" id="worth" value="${settings.worthIt}"><button class="btn ghost" style="margin-top:10px" data-act="saveworth">Save</button></div>
   <div class="card"><h2>Backup</h2><p class="small muted" style="margin-top:0">Saves your stored results, lines and settings to a file. Restoring merges it in, so nothing already here is lost — handy for moving between Chrome and Firefox.</p>
@@ -576,6 +597,7 @@ document.addEventListener('change',e=>{
   for(const k of Object.keys(GAMES))state.live[k]=(await DB.get('draws_'+k))||[];
   render();
   maybeAutoSync();
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')maybeAutoSync()});
   if('serviceWorker' in navigator)try{navigator.serviceWorker.register('sw.js')}catch(e){}
 })();
 </script>
