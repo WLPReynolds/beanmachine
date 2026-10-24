@@ -69,6 +69,8 @@ clip-path:polygon(50% 0,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,
 .dv .t i{position:absolute;top:0;bottom:0;border-radius:6px}
 .rank{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:6px 0}
 .rank .when{font-size:12px;color:var(--muted);min-width:64px}
+.grp,.latest{cursor:pointer;-webkit-user-select:none;user-select:none}
+.latest .chev{color:var(--muted);font-size:14px;transition:transform .2s;display:inline-block;margin-left:6px}.latest.open .chev{transform:rotate(90deg)}
 .grp{cursor:pointer;-webkit-user-select:none;user-select:none}
 .grp .chev{color:var(--muted);font-size:12px;transition:transform .2s;display:inline-block;margin-left:6px}
 .grp.open .chev{transform:rotate(90deg)}
@@ -141,7 +143,7 @@ nav button.on{color:var(--gold2)}nav button.on span{filter:none;opacity:1}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION='v2026-10-24.20:00';
+const APP_VERSION='v2026-10-24.20:10';
 
 /* ---------- Game definitions ---------- */
 // "since" = first draw of the current format: Lotto went to 59 balls in Oct 2015; EuroMillions to 12 Lucky Stars in Sep 2016.
@@ -470,14 +472,16 @@ function viewLatest(){
     jack=`<div class="card jack"><div class="muted small">${settings.demo?'Sample jackpot':'Jackpot'}</div><div class="big">${money(jp)}</div>${worth?`<div style="margin-top:6px;font-weight:700">${worth}</div>`:''}</div>`;
   }
   const anim=state.animKey!==g.key+d.date;state.animKey=g.key+d.date;
-  return `${jack}<div class="card"><h2>${g.name} · ${fmtDate(d.date)}</h2>${[...ls].reverse().map(x=>`${x.round?`<h3>${x.round}</h3>`:''}${rowBalls(g,x.main,x.extra,{fit:'fit-lg',anim})}${settings.demo?'':crowdLine(g,x)}`).join('')}
+  const lk='L'+g.key+d.date,lopen=state.open.has(lk);
+  const meta=x=>x.machine||x.ballSet?`<div class="meta">Machine ${x.machine??'?'} · Ball set ${x.ballSet??'?'}</div>`:'';
+  return `${jack}<div class="card latest${lopen?' open':''}" data-grp="${lk}"><h2>${g.name} · ${fmtDate(d.date)}<span class="chev">▸</span></h2>${[...ls].reverse().map(x=>`${x.round?`<h3>${x.round}</h3>`:''}${rowBalls(g,x.main,x.extra,{fit:'fit-lg',anim})}${settings.demo?'':crowdLine(g,x)}${lopen&&(x.prizes||x.machine||x.ballSet||settings.demo)?`<div class="pb">${prizeTable(g,x)}${meta(x)}</div>`:''}`).join('')}
   ${nd?`<div class="note">Next draw: ${nd.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'short'})}</div>`:''}</div>
   <div class="card"><h2>Recent draws</h2>${recentHTML(g,ds)}</div>`;
 }
 // Prize breakdown table for one draw/round, top tier first
 function prizeMoney(v){if(!(v>0))return '—';if(v>=1e6)return money(v);return '£'+(v%1?v.toFixed(2):Math.round(v).toLocaleString('en-GB'))}
 function prizeTable(g,d){
-  if(!d.prizes)return `<p class="small muted" style="margin:0">Prize breakdown not published yet — it usually arrives a few hours after the draw.</p>`;
+  if(!d.prizes)return settings.demo?`<p class="small muted" style="margin:0">Sample data has no prize breakdown.</p>`:'';
   const rows=d.prizes.map(x=>{const r=/Match (\d)(?: plus (?:(\d) )?Bonus Balls?)?/i.exec(x.t||'');if(!r)return null;
     const m=+r[1],st=r[2]?+r[2]:/plus/i.test(x.t)?1:0;return{m,st,w:x.w,p:x.p}}).filter(Boolean)
     .sort((a,b)=>b.m-a.m||b.st-a.st);
