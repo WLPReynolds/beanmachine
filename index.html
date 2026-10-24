@@ -124,7 +124,7 @@ nav button.on{color:var(--gold2)}nav button.on span{filter:none;opacity:1}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION='v2026-10-24.16:30';
+const APP_VERSION='v2026-10-24.18:40';
 
 /* ---------- Game definitions ---------- */
 // "since" = first draw of the current format: Lotto went to 59 balls in Oct 2015; EuroMillions to 12 Lucky Stars in Sep 2016.
@@ -146,6 +146,7 @@ const myLines=Object.assign({lotto:[],euromillions:[]},LS.get('lines',{}));
 const saveLines=()=>LS.set('lines',myLines);
 const MAX_LINES=10;
 const saveSettings=()=>LS.set('settings',settings);
+settings.freePlan=true; // fallback only fetches this year's results; the Worker's store holds the history
 const state={game:LS.get('game','lotto'),view:'latest',live:{lotto:[],euromillions:[]},meta:LS.get('meta',{}),
   pick:{main:new Set(),extra:new Set()},editing:null,gen:[],statWin:'all',statPool:'main',statSort:'num'};
 const demoCache={};
@@ -529,7 +530,6 @@ function viewSettings(){
   <div class="tog"><span>Use sample data<div class="small muted">Simulated draws for trying things out</div></span><label class="sw"><input type="checkbox" data-set="demo" ${settings.demo?'checked':''}><span></span></label></div>
   <label class="f">Worker URL</label><input type="url" id="wurl" placeholder="https://lotto-lab.yourname.workers.dev" value="${esc(settings.workerUrl)}">
   <div class="row" style="margin-top:10px"><button class="btn ghost" data-act="saveurl">Save</button>${settings.freePlan?'':'<button class="btn ghost" data-act="syncfull">Sync all history</button>'}<button class="btn ghost" data-act="sync">Get latest</button></div>
-  <div class="tog"><span>Free API plan<div class="small muted">Only matters if the Worker's store isn't set up: then each update fetches this year's results directly (1–2 calls per game).</div></span><label class="sw"><input type="checkbox" data-set="freePlan" ${settings.freePlan?'checked':''}><span></span></label></div>
   <div class="note">${state.meta.remaining?`API calls left: <b>${state.meta.remaining.n}</b>${state.meta.remaining.limit?' / '+state.meta.remaining.limit:''} (as of ${new Date(state.meta.remaining.at).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}). The free plan allows 100 a month and one month of history. `:''}${storeNote()}</div></div>
   <div class="card"><h2>Lotto</h2><div class="tog"><span>Bonus ball counts as drawn<div class="small muted">For My lines: if the bonus is one of your numbers, it gets swapped too</div></span><label class="sw"><input type="checkbox" data-set="bonusCounts" ${settings.bonusCounts?'checked':''}><span></span></label></div></div>
   <div class="card"><h2>EuroMillions</h2><label class="f">“Worth winning” threshold (£)</label><input type="number" inputmode="numeric" id="worth" value="${settings.worthIt}"><button class="btn ghost" style="margin-top:10px" data-act="saveworth">Save</button></div>
