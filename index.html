@@ -69,6 +69,13 @@ clip-path:polygon(50% 0,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,
 .dv .t i{position:absolute;top:0;bottom:0;border-radius:6px}
 .rank{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:6px 0}
 .rank .when{font-size:12px;color:var(--muted);min-width:64px}
+.grp{cursor:pointer;-webkit-user-select:none;user-select:none}
+.grp .chev{color:var(--muted);font-size:12px;transition:transform .2s;display:inline-block;margin-left:6px}
+.grp.open .chev{transform:rotate(90deg)}
+.pb{margin:8px 0 4px;padding:10px 12px;border-radius:12px;background:rgba(0,0,0,.22)}
+.pb h4{margin:0 0 6px;font-size:13px;color:var(--gold2)}
+.pb table{font-size:13px}.pb td,.pb th{padding:4px 4px}.pb td:first-child,.pb th:first-child{text-align:left}.pb td:last-child,.pb th:last-child{text-align:right}
+.pb .meta{font-size:11px;color:var(--muted);margin-top:6px}
 .arrow{color:var(--gold2);font-weight:800;font-size:13px;margin:10px 0 6px}
 .bonus{outline:2px dashed var(--gold);outline-offset:2px}
 .drop{animation:drop .6s cubic-bezier(.3,1.6,.5,1) both}
@@ -134,7 +141,7 @@ nav button.on{color:var(--gold2)}nav button.on span{filter:none;opacity:1}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION='v2026-10-24.19:45';
+const APP_VERSION='v2026-10-24.20:00';
 
 /* ---------- Game definitions ---------- */
 // "since" = first draw of the current format: Lotto went to 59 balls in Oct 2015; EuroMillions to 12 Lucky Stars in Sep 2016.
@@ -158,7 +165,7 @@ const MAX_LINES=10;
 const saveSettings=()=>LS.set('settings',settings);
 settings.freePlan=true; // fallback only fetches this year's results; the Worker's store holds the history
 const state={game:LS.get('game','lotto'),view:'latest',live:{lotto:[],euromillions:[]},meta:LS.get('meta',{}),
-  pick:{main:new Set(),extra:new Set()},editing:null,gen:[],statWin:'all',statPool:'main',statSort:'num'};
+  pick:{main:new Set(),extra:new Set()},editing:null,open:new Set(),animKey:'',gen:[],statWin:'all',statPool:'main',statSort:'num'};
 const demoCache={};
 
 /* ---------- Helpers ---------- */
@@ -462,18 +469,31 @@ function viewLatest(){
     const worth=g.key==='euromillions'?(jp>=settings.worthIt?`🔥 Over your ${money(settings.worthIt)} line — worth winning!`:`😴 Under your ${money(settings.worthIt)} “worth winning” line`):'';
     jack=`<div class="card jack"><div class="muted small">${settings.demo?'Sample jackpot':'Jackpot'}</div><div class="big">${money(jp)}</div>${worth?`<div style="margin-top:6px;font-weight:700">${worth}</div>`:''}</div>`;
   }
-  return `${jack}<div class="card"><h2>${g.name} · ${fmtDate(d.date)}</h2>${[...ls].reverse().map(x=>`${x.round?`<h3>${x.round}</h3>`:''}${rowBalls(g,x.main,x.extra,{fit:'fit-lg',anim:true})}${settings.demo?'':crowdLine(g,x)}`).join('')}
+  const anim=state.animKey!==g.key+d.date;state.animKey=g.key+d.date;
+  return `${jack}<div class="card"><h2>${g.name} · ${fmtDate(d.date)}</h2>${[...ls].reverse().map(x=>`${x.round?`<h3>${x.round}</h3>`:''}${rowBalls(g,x.main,x.extra,{fit:'fit-lg',anim})}${settings.demo?'':crowdLine(g,x)}`).join('')}
   ${nd?`<div class="note">Next draw: ${nd.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'short'})}</div>`:''}</div>
   <div class="card"><h2>Recent draws</h2>${recentHTML(g,ds)}</div>`;
+}
+// Prize breakdown table for one draw/round, top tier first
+function prizeMoney(v){if(!(v>0))return '—';if(v>=1e6)return money(v);return '£'+(v%1?v.toFixed(2):Math.round(v).toLocaleString('en-GB'))}
+function prizeTable(g,d){
+  if(!d.prizes)return `<p class="small muted" style="margin:0">Prize breakdown not published yet — it usually arrives a few hours after the draw.</p>`;
+  const rows=d.prizes.map(x=>{const r=/Match (\d)(?: plus (?:(\d) )?Bonus Balls?)?/i.exec(x.t||'');if(!r)return null;
+    const m=+r[1],st=r[2]?+r[2]:/plus/i.test(x.t)?1:0;return{m,st,w:x.w,p:x.p}}).filter(Boolean)
+    .sort((a,b)=>b.m-a.m||b.st-a.st);
+  const lbl=x=>g.sepPool?`${x.m}${x.st?` + ${x.st}★`:''}`:`${x.m}${x.st?' + Bonus':''}`;
+  return `<table><tr><th>Match</th><th>Winners</th><th>Prize each</th></tr>${rows.map(x=>`<tr><td>${lbl(x)}</td><td>${x.w>0?x.w.toLocaleString('en-GB'):'0'}</td><td class="${x.w>0&&x.p>0?'prize':''}">${prizeMoney(x.p)}</td></tr>`).join('')}</table>`;
 }
 function recentHTML(g,ds){
   const dates=[...new Set(ds.map(x=>x.date))].slice(1,7);
   return dates.map(dt=>{
     const rs=ds.filter(x=>x.date===dt).sort((a,b)=>String(a.round||'').localeCompare(String(b.round||'')));
     const chips=settings.demo?'':rs.map(x=>{const c=crowd(g,x);return c?`${x.round?`<span class="small muted">${x.round.replace('Round ','R')}</span>`:''}${cwChip(c.main,true)}`:''}).join(' ');
-    return `<div class="grp"><div class="dt"><span>${shortDate(dt)}</span><span class="cws">${chips}</span></div>${rs.map(x=>x.round
+    const open=state.open.has(g.key+dt);
+    const detail=!open?'':rs.map(x=>`<div class="pb">${x.round?`<h4>${x.round}</h4>`:''}${settings.demo?'':crowdLine(g,x)}${prizeTable(g,x)}${x.machine||x.ballSet?`<div class="meta">Machine ${x.machine??'?'} · Ball set ${x.ballSet??'?'}</div>`:''}</div>`).join('');
+    return `<div class="grp${open?' open':''}" data-grp="${g.key+dt}"><div class="dt"><span>${shortDate(dt)}<span class="chev">▸</span></span><span class="cws">${chips}</span></div>${rs.map(x=>x.round
       ?`<div class="rr"><span class="lbl">${x.round}</span>${rowBalls(g,x.main,x.extra,{fit:'fit'})}</div>`
-      :`<div class="rr">${rowBalls(g,x.main,x.extra,{fit:'fit-md'})}</div>`).join('')}</div>`}).join('');
+      :`<div class="rr">${rowBalls(g,x.main,x.extra,{fit:'fit-md'})}</div>`).join('')}${detail}</div>`}).join('');
 }
 
 function pickerGrid(g,pool){
@@ -618,7 +638,8 @@ function render(){
 
 /* ---------- Events ---------- */
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-game],[data-view],[data-pick],[data-act],[data-lines],[data-win],[data-pool],[data-sort]');if(!t)return;
+  const t=e.target.closest('[data-game],[data-view],[data-pick],[data-act],[data-lines],[data-win],[data-pool],[data-sort],[data-grp]');if(!t)return;
+  if(t.dataset.grp){const k=t.dataset.grp;state.open.has(k)?state.open.delete(k):state.open.add(k);const y=scrollY;render();scrollTo(0,y);return}
   const g=G(),ds=draws();
   if(t.dataset.game){state.game=t.dataset.game;LS.set('game',state.game);state.pick={main:new Set(),extra:new Set()};state.gen=[];state.statPool='main';state.editing=null}
   else if(t.dataset.view){state.view=t.dataset.view;state.editing=null;scrollTo(0,0)}
