@@ -59,6 +59,16 @@ clip-path:polygon(50% 0,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,
 .starw.new{filter:drop-shadow(0 0 3px #fff) drop-shadow(0 0 8px var(--gold))}
 .lhead{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px}
 .ibtn{border:1px solid var(--line);background:rgba(255,255,255,.08);color:var(--ink);border-radius:10px;padding:6px 10px;font-weight:700;font-size:13px}
+.cw{display:inline-block;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:800;white-space:nowrap}
+.cw-hi{background:rgba(255,93,115,.2);color:#ff8fa0}.cw-lo{background:rgba(61,220,151,.18);color:var(--good)}.cw-av{background:rgba(255,255,255,.1);color:var(--muted)}
+.grp .dt{display:flex;justify-content:space-between;align-items:center;gap:8px}.grp .dt .cws{display:flex;gap:4px}
+.crowdline{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:6px 0 2px;font-size:13px;color:var(--muted)}
+.dv .b{display:grid;grid-template-columns:92px 1fr 44px;gap:8px;align-items:center;font-size:13px;margin:6px 0}
+.dv .t{height:12px;border-radius:6px;background:rgba(255,255,255,.08);position:relative}
+.dv .t:after{content:"";position:absolute;left:50%;top:-3px;bottom:-3px;width:1px;background:rgba(255,255,255,.5)}
+.dv .t i{position:absolute;top:0;bottom:0;border-radius:6px}
+.rank{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:6px 0}
+.rank .when{font-size:12px;color:var(--muted);min-width:64px}
 .arrow{color:var(--gold2);font-weight:800;font-size:13px;margin:10px 0 6px}
 .bonus{outline:2px dashed var(--gold);outline-offset:2px}
 .drop{animation:drop .6s cubic-bezier(.3,1.6,.5,1) both}
@@ -124,7 +134,7 @@ nav button.on{color:var(--gold2)}nav button.on span{filter:none;opacity:1}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION='v2026-10-24.18:40';
+const APP_VERSION='v2026-10-24.19:45';
 
 /* ---------- Game definitions ---------- */
 // "since" = first draw of the current format: Lotto went to 59 balls in Oct 2015; EuroMillions to 12 Lucky Stars in Sep 2016.
@@ -337,6 +347,64 @@ const phi=z=>.5*(1+erf(z/Math.SQRT2));
 function chiP(x,k){const z=(Math.cbrt(x/k)-(1-2/(9*k)))/Math.sqrt(2/(9*k));return 1-phi(z)}
 function comb(n,k){if(k<0||k>n)return 0;let r=1;for(let i=1;i<=k;i++)r=r*(n-k+i)/i;return r}
 
+/* ---------- Crowd score: how popular were the drawn numbers? ----------
+   Uses the draw's own prize breakdown. By pure chance, the ratio of Match-3 to Match-2 winners is fixed
+   (Lotto: 0.1067; EuroMillions, both with no stars: 0.0698), whatever the numbers and however many
+   tickets were sold. If the drawn numbers are popular, more people share 3 of them, so the ratio rises.
+   Score = observed ratio ÷ chance ratio − 1. Noise ≈ ±2·sqrt(1/W_a + 1/W_b). */
+function tierMap(prizes){
+  const m={};
+  for(const x of prizes||[]){const r=/Match (\d)(?: plus (?:(\d) )?Bonus Balls?)?/i.exec(x.t||'');if(!r||!(x.w>0))continue;
+    const k=r[1]+'+'+(r[2]?+r[2]:/plus/i.test(x.t)?1:0);m[k]=(m[k]||0)+x.w}
+  return m;
+}
+function ratioScore(wa,wb,expected){
+  if(!(wa>0&&wb>0))return null;
+  const pct=(wa/wb)/expected-1,noise=2*Math.sqrt(1/wa+1/wb);
+  return{pct,noise,sig:Math.abs(Math.log(1+pct))>noise};
+}
+const CROWD={lotto:{m3:0.10666666666666666,m4:0.004705882352941177},euromillions:{m3:0.0697674418604651,st:1/45}};
+function crowd(g,d){
+  if(!d.prizes)return null;
+  const m=tierMap(d.prizes),c=CROWD[g.key];
+  const main=ratioScore(m['3+0'],m['2+0'],c.m3);if(!main)return null;
+  return{main,
+    m4:g.key==='lotto'?ratioScore(m['4+0'],m['2+0'],c.m4):null,
+    stars:g.sepPool?ratioScore(m['2+2'],m['2+0'],c.st):null};
+}
+const pctTxt=x=>(x.pct>=0?'+':'−')+Math.round(Math.abs(x.pct)*100)+'%';
+function cwChip(x,short){
+  if(!x)return '';
+  const cls=!x.sig?'cw-av':x.pct>0?'cw-hi':'cw-lo';
+  return `<span class="cw ${cls}">${short?'':'👥 '}${x.sig?pctTxt(x):'≈ avg'}</span>`;
+}
+function crowdLine(g,d){
+  const c=crowd(g,d);
+  if(!c)return `<div class="crowdline">👥 Crowd score: waiting for the prize breakdown (published a few hours after the draw)</div>`;
+  const desc=!c.main.sig?'about as popular as chance':c.main.pct>0?`${Math.round(c.main.pct*100)}% more popular than chance — prizes shared more widely`:`${Math.round(-c.main.pct*100)}% less popular than chance — prizes shared less widely`;
+  let extra='';
+  if(c.m4)extra+=` · Match 4: ${pctTxt(c.m4)}`;
+  if(c.stars)extra+=` · Lucky Stars ${cwChip(c.stars,true)}`;
+  return `<div class="crowdline">${cwChip(c.main)}<span>${g.sepPool?'Main numbers ':'Numbers '}${desc}${extra}</span></div>`;
+}
+function crowdCard(g,ds){
+  const rows=ds.map(d=>({d,c:crowd(g,d)})).filter(x=>x.c);
+  let h=`<div class="card"><h2>👥 Crowd watch</h2><p class="small muted" style="margin-top:0">How popular each draw's numbers were with real UK players, worked out from how many people won at each prize level. Popular numbers mean shared prizes.</p>`;
+  if(!rows.length)return h+`<p>No prize breakdowns stored yet.</p></div>`;
+  const when=d=>shortDate(d.date)+(d.round?` ${d.round.replace('Round ','R')}`:'');
+  const sorted=[...rows].sort((a,b)=>b.c.main.pct-a.c.main.pct);
+  const line=x=>`<div class="rank"><span class="when">${when(x.d)}</span>${rowBalls(g,x.d.main,[],{fit:'fit'})}${cwChip(x.c.main,true)}</div>`;
+  h+=`<h3>Most crowded</h3>${sorted.slice(0,3).map(line).join('')}<h3>Quietest</h3>${sorted.slice(-3).reverse().map(line).join('')}`;
+  // Birthday effect, measured: average crowd score by how many drawn numbers were 31 or under
+  const grp={};rows.forEach(x=>{const k=x.d.main.filter(n=>n<=31).length;(grp[k]=grp[k]||[]).push(x.c.main.pct)});
+  const ks=Object.keys(grp).map(Number).sort((a,b)=>a-b),avg=k=>grp[k].reduce((a,b)=>a+b,0)/grp[k].length;
+  const top=Math.max(0.05,...ks.map(k=>Math.abs(avg(k))));
+  h+=`<h3>The birthday effect, measured</h3><div class="dv">${ks.map(k=>{const a=avg(k),w=Math.abs(a)/top*50;
+    return `<div class="b"><span>${k} of ${g.main} ≤31 <span class="muted">(${grp[k].length})</span></span><div class="t"><i style="${a>=0?`left:50%;width:${w}%;background:var(--bad)`:`right:50%;width:${w}%;background:var(--good)`}"></i></div><span class="small">${(a>=0?'+':'−')+Math.round(Math.abs(a)*100)}%</span></div>`}).join('')}</div>
+  <div class="note">Average crowd score for draws with that many numbers in the birthday range (number of draws in brackets). If people really favour birthdays, the bars should climb as you go down. Based on ${rows.length} draw${rows.length===1?'':'s'} so far${g.roundsSince?' (each round counts)':''} — it firms up as the Worker stores more.</div></div>`;
+  return h;
+}
+
 /* ---------- Backup ---------- */
 function exportBackup(){
   const data={app:'lotto-lab',version:1,exported:new Date().toISOString(),
@@ -394,7 +462,7 @@ function viewLatest(){
     const worth=g.key==='euromillions'?(jp>=settings.worthIt?`🔥 Over your ${money(settings.worthIt)} line — worth winning!`:`😴 Under your ${money(settings.worthIt)} “worth winning” line`):'';
     jack=`<div class="card jack"><div class="muted small">${settings.demo?'Sample jackpot':'Jackpot'}</div><div class="big">${money(jp)}</div>${worth?`<div style="margin-top:6px;font-weight:700">${worth}</div>`:''}</div>`;
   }
-  return `${jack}<div class="card"><h2>${g.name} · ${fmtDate(d.date)}</h2>${[...ls].reverse().map(x=>`${x.round?`<h3>${x.round}</h3>`:''}${rowBalls(g,x.main,x.extra,{fit:'fit-lg',anim:true})}`).join('')}
+  return `${jack}<div class="card"><h2>${g.name} · ${fmtDate(d.date)}</h2>${[...ls].reverse().map(x=>`${x.round?`<h3>${x.round}</h3>`:''}${rowBalls(g,x.main,x.extra,{fit:'fit-lg',anim:true})}${settings.demo?'':crowdLine(g,x)}`).join('')}
   ${nd?`<div class="note">Next draw: ${nd.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'short'})}</div>`:''}</div>
   <div class="card"><h2>Recent draws</h2>${recentHTML(g,ds)}</div>`;
 }
@@ -402,7 +470,8 @@ function recentHTML(g,ds){
   const dates=[...new Set(ds.map(x=>x.date))].slice(1,7);
   return dates.map(dt=>{
     const rs=ds.filter(x=>x.date===dt).sort((a,b)=>String(a.round||'').localeCompare(String(b.round||'')));
-    return `<div class="grp"><div class="dt">${shortDate(dt)}</div>${rs.map(x=>x.round
+    const chips=settings.demo?'':rs.map(x=>{const c=crowd(g,x);return c?`${x.round?`<span class="small muted">${x.round.replace('Round ','R')}</span>`:''}${cwChip(c.main,true)}`:''}).join(' ');
+    return `<div class="grp"><div class="dt"><span>${shortDate(dt)}</span><span class="cws">${chips}</span></div>${rs.map(x=>x.round
       ?`<div class="rr"><span class="lbl">${x.round}</span>${rowBalls(g,x.main,x.extra,{fit:'fit'})}</div>`
       :`<div class="rr">${rowBalls(g,x.main,x.extra,{fit:'fit-md'})}</div>`).join('')}</div>`}).join('');
 }
@@ -499,6 +568,7 @@ function viewStats(){
   let h=`<div class="card"><div class="chips">${[['all','All '+all.length],['100','Last 100'],['26','Last 26']].map(([v,l])=>`<button class="chip ${state.statWin===v?'on':''}" data-win="${v}">${l}</button>`).join('')}</div>
   ${g.sepPool?`<div class="chips" style="margin-top:8px">${[['main','Main balls'],['extra','Lucky Stars']].map(([v,l])=>`<button class="chip ${pool===v?'on':''}" data-pool="${v}">${l}</button>`).join('')}</div>`:''}
   <div class="note">${n} draws${state.statWin==='all'?' since '+fmtDate(g.since)+' (current format)':''}. Expected per ${isStar?'star':'number'}: ${exp.toFixed(1)}.</div></div>`;
+  if(!isStar&&!settings.demo)h+=crowdCard(g,ds);
   h+=`<div class="card"><h2>Is it random?</h2><div class="row" style="justify-content:space-between"><span class="pill ${pv>.05?'p-low':pv>.01?'p-med':'p-high'}">${pv>.05?'Looks random':pv>.01?'Slightly unusual':'Unusual spread'}</span><span class="muted small">χ² ${x2.toFixed(1)} · df ${df} · p ${pv<.001?'<0.001':pv.toFixed(3)}</span></div>
   <p class="small" style="margin-bottom:0">${pv>.05?`The ups and downs between numbers are about what pure chance produces. “Hot” and “cold” numbers are just noise.`:`The spread is a bit lumpier than chance usually gives. With small windows that happens now and then — it isn't a signal to bet on.`}</p></div>`;
   h+=`<div class="card"><h2>Hot & cold</h2><h3>Most drawn</h3>${lineBalls(g,isStar?[]:hot,[],{sm:true})}${isStar?`<div class="balls">${hot.map(x=>ball(x,g,{star:true,sm:true})).join('')}</div>`:''}<div class="note">${hot.map(x=>`${x}: ${cnt[x]}`).join(' · ')}</div>
