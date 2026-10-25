@@ -146,6 +146,18 @@ nav button.on{color:var(--gold2)}nav button.on span{filter:none;opacity:1}
 .toast{position:fixed;left:50%;bottom:100px;transform:translateX(-50%);background:#fff;color:#2a1040;font-weight:700;padding:10px 16px;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.4);z-index:9;opacity:0;transition:opacity .25s;pointer-events:none;max-width:90vw;text-align:center}
 .toast.show{opacity:1}
 .note{font-size:12px;color:var(--muted);margin-top:10px;line-height:1.4}
+.hstory{position:absolute;top:calc(14px + env(safe-area-inset-top));right:14px;z-index:2;border:1px solid var(--line);background:rgba(0,0,0,.25);color:var(--muted);font-weight:700;font-size:12px;padding:6px 10px;border-radius:999px}
+.hstory.on{color:var(--gold2);border-color:rgba(247,201,72,.6)}
+.story p{line-height:1.5;margin:8px 0}.story .cap{text-align:center;margin:6px 0 0}
+.bm{display:block;width:100%;max-width:420px;margin:0 auto}
+.bm-peg{fill:var(--gold2);opacity:.85}
+.bm-wall{stroke:rgba(255,255,255,.28);stroke-width:1.5;stroke-linecap:round}
+.bm-hopper{fill:rgba(255,255,255,.06);stroke:var(--gold);stroke-width:1.5;stroke-linejoin:round}
+.bm-curve{fill:none;stroke:var(--gold);stroke-width:1.2;stroke-dasharray:3 4;opacity:.55}
+#bm-settled{transition:opacity 1.2s}
+.bm-wobble{transform-box:fill-box;transform-origin:50% 90%;animation:bmwob 3.2s ease-in-out infinite}
+@keyframes bmwob{0%,100%{transform:rotate(-8deg)}50%{transform:rotate(10deg) translateY(-2px)}}
+@media (prefers-reduced-motion:reduce){.bm-wobble{animation:none}}
 </style>
 </head>
 <body>
@@ -153,6 +165,6 @@ nav button.on{color:var(--gold2)}nav button.on span{filter:none;opacity:1}
 <main id="view"></main>
 <nav id="nav"></nav>
 <div class="toast" id="toast"></div>
-<script src="src/app.js?v=1.1.0"></script>
+<script src="src/app.js?v=1.1.1"></script>
 </body>
 </html>

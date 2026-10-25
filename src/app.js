@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.1.0';
+const APP_VERSION='1.1.1';
 
 /* ---------- Game definitions ---------- */
 // "since" = first draw of the current format: Lotto went to 59 balls in Oct 2015; EuroMillions to 12 Lucky Stars in Sep 2016.
@@ -371,6 +371,97 @@ async function importBackup(file){
   toast(`Restored: ${addedD} new draws, ${addedL} new lines, ${addedT} entries`);
 }
 
+/* ---------- Story: the bean machine ----------
+   A Galton board: balls drop through rows of pegs, bouncing left or right at random, and pile up in bins.
+   No single ball can be predicted, yet together they always build the same bell-shaped curve. */
+const BM={rows:9,dx:26,dy:19,y0:70,cx:160,binTop:232,binBot:292,r:4,max:7};
+const BM_COLS=['#2f86ff','#ff5fa8','#33cc66','#ffd431','#a066ff','#f3f3f8'];
+const BEAN_D='M0,-9C8,-11 13,-4 11,4C9,11 0,12 -5,8C-9,5 -5,1 -8,-3C-10,-7 -6,-8 0,-9Z';
+// One ball's journey: an L/R choice at each row of pegs. The bin is the number of rights (0..rows).
+function galtonPath(rows,rng){return Array.from({length:rows},()=>rng()<.5?-1:1)}
+const galtonBin=(rows,rng)=>galtonPath(rows,rng).filter(d=>d>0).length;
+const bmBinX=k=>BM.cx+(k-BM.rows/2)*BM.dx;
+const bmStackY=h=>BM.binBot-BM.r-h*(2*BM.r+.5);
+let bm={counts:Array(BM.rows+1).fill(0),settled:[],live:[],n:0,last:0,run:0,fade:0};
+function beanMachineSVG(){
+  const {rows,dx,dy,y0,cx,binTop,binBot}=BM;let pegs='',walls='';
+  for(let r=0;r<rows;r++)for(let k=0;k<=r;k++)pegs+=`<circle class="bm-peg" cx="${cx+(k-r/2)*dx}" cy="${y0+r*dy}" r="2.6"/>`;
+  for(let k=0;k<=rows+1;k++){const x=bmBinX(k)-dx/2;walls+=`<line class="bm-wall" x1="${x}" y1="${binTop}" x2="${x}" y2="${binBot}"/>`}
+  // Expected shape (binomial), scaled so the tallest bin is just under full
+  const pk=k=>comb(rows,k)/2**rows,peak=pk(Math.floor(rows/2));
+  const curve=Array.from({length:rows+1},(_,k)=>`${bmBinX(k)},${(bmStackY(pk(k)/peak*(BM.max-1))-BM.r).toFixed(1)}`).join(' ');
+  const grads=BM_COLS.map((c,i)=>`<radialGradient id="bmg${i}" cx="35%" cy="30%" r="70%"><stop offset="0" stop-color="#fff"/><stop offset=".25" stop-color="${c}"/><stop offset="1" stop-color="${c}" stop-opacity=".75"/></radialGradient>`).join('');
+  return `<svg id="beanm" class="bm" viewBox="0 0 320 300" role="img" aria-label="A bean machine: balls dropping through pegs and piling into a bell curve">
+  <defs>${grads}<linearGradient id="bmgold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffe48a"/><stop offset="1" stop-color="#e0a420"/></linearGradient></defs>
+  <path class="bm-hopper" d="M${cx-42},16 L${cx+42},16 L${cx+9},48 L${cx-9},48 Z"/>
+  <g class="bm-mascot" transform="translate(${cx+58},26)"><g class="bm-wobble"><path d="${BEAN_D}" fill="url(#bmgold)" stroke="#a8730f" stroke-width="1"/>
+    <circle cx="-2" cy="-2" r="1.6" fill="#3a2300"/><circle cx="4" cy="-3" r="1.6" fill="#3a2300"/><path d="M-2,3 Q1.5,6 5,2" fill="none" stroke="#3a2300" stroke-width="1.3" stroke-linecap="round"/></g></g>
+  ${pegs}<g class="bm-walls">${walls}<line class="bm-wall" x1="${bmBinX(0)-dx/2}" y1="${binBot}" x2="${bmBinX(rows)+dx/2}" y2="${binBot}"/></g>
+  <polyline class="bm-curve" points="${curve}"/>
+  <g id="bm-settled"></g><g id="bm-live"></g></svg>`;
+}
+function bmShape(x,y,ci,bean,rot=0){
+  return bean
+    ?`<path d="${BEAN_D}" transform="translate(${x.toFixed(1)},${y.toFixed(1)}) rotate(${rot.toFixed(0)}) scale(.5)" fill="url(#bmgold)" stroke="#a8730f" stroke-width="1.5"/>`
+    :`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${BM.r}" fill="url(#bmg${ci})"/>`;
+}
+// Where a ball is, t ms after it was dropped (null once it has landed)
+function bmPos(b,t){
+  const seg=105,{rows,dx,dy,y0,cx}=BM,s=t/seg;
+  if(s<1)return{x:cx,y:40+(y0-7-40)*s};
+  let x=cx,i=Math.floor(s-1),p=(s-1)-i;
+  if(i<rows){for(let j=0;j<i;j++)x+=b.path[j]*dx/2;
+    const x1=x+b.path[i]*dx/2,yA=y0-7+i*dy,e=p*p*(3-2*p);
+    return{x:x+(x1-x)*e,y:yA+dy*p-Math.sin(Math.PI*p)*5};}
+  const yA=y0-7+rows*dy,yB=bmStackY(b.h),fall=Math.max(1,(yB-yA)/BM.dy),q=(s-1-rows)/fall;
+  return q>=1?null:{x:bmBinX(b.k),y:yA+(yB-yA)*q*q};
+}
+function bmDrawSettled(){const g=document.getElementById('bm-settled');if(g)g.innerHTML=bm.settled.map(b=>bmShape(bmBinX(b.k),bmStackY(b.h),b.ci,b.bean,b.rot)).join('')}
+function bmTick(now){
+  const live=document.getElementById('bm-live');if(!live)return false;
+  if(bm.fade&&now>bm.fade){bm.fade=0;bm.counts.fill(0);bm.settled=[];bmDrawSettled();document.getElementById('bm-settled').style.opacity=1}
+  if(!bm.fade&&now-bm.last>240&&bm.live.length<9){
+    bm.last=now;const path=galtonPath(BM.rows,rand),k=path.filter(d=>d>0).length;
+    bm.live.push({path,k,h:bm.counts[k]++,t0:now,ci:bm.n%BM_COLS.length,bean:bm.n%13===12,rot:rand()*360});bm.n++;
+  }
+  let html='';
+  bm.live=bm.live.filter(b=>{const p=bmPos(b,now-b.t0);if(!p){bm.settled.push(b);bmDrawSettled();return false}
+    html+=bmShape(p.x,p.y,b.ci,b.bean,b.rot+(now-b.t0)*.4);return true});
+  live.innerHTML=html;
+  if(!bm.fade&&bm.counts.some(c=>c>=BM.max)){bm.fade=now+1800;const g=document.getElementById('bm-settled');g.style.opacity=.15}
+  return true;
+}
+// A finished pile for reduced motion: the expected shape, drawn once
+function bmStatic(){
+  const {rows}=BM,peak=comb(rows,Math.floor(rows/2));bm.settled=[];let n=0;
+  for(let k=0;k<=rows;k++){const c=Math.round(comb(rows,k)/peak*(BM.max-1));for(let h=0;h<c;h++)bm.settled.push({k,h,ci:n%BM_COLS.length,bean:n++===17,rot:30})}
+  bmDrawSettled();
+}
+function startBeanMachine(){
+  const svg=document.getElementById('beanm');if(!svg)return;
+  const run=++bm.run;bm.live=[];bm.counts=Array(BM.rows+1).fill(0);bm.settled.forEach(b=>bm.counts[b.k]=Math.max(bm.counts[b.k],b.h+1));
+  if(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches){bmStatic();return}
+  bmDrawSettled();
+  const loop=t=>{if(run!==bm.run||!bmTick(t))return;requestAnimationFrame(loop)};
+  requestAnimationFrame(loop);
+}
+function viewStory(){
+  return `<div class="card story"><h2>The bean machine</h2>${beanMachineSVG()}
+  <p class="small muted cap">Every ball bounces left or right at random. You can't predict one — but together they always build the same curve.</p></div>
+  <div class="card story">
+  <h3>Where it comes from</h3>
+  <p>In the 1870s the Victorian scientist Francis Galton built a board covered in pegs. Drop a ball in at the top and it bounces left or right at every peg, completely by chance, before landing in a slot at the bottom. It's known as a Galton board, or a <b>bean machine</b>, because the early ones used beans.</p>
+  <p>Nobody can say where the next ball will land. But drop a few hundred and they pile up into the same bell-shaped curve every single time. Randomness is unpredictable one at a time, and remarkably predictable in bulk.</p>
+  <h3>What it means for the lottery</h3>
+  <p>Each draw is one ball. It has no memory, so no number is ever “due”, and every line has exactly the same chance. Over hundreds of draws the counts settle down around the average, just like the bins. The <b>Stats</b> page checks that with a proper test, so you can see the machine is fair for yourself.</p>
+  <h3>What you <i>can</i> change</h3>
+  <p>Not your chance of winning — but who you'd share with. People don't choose at random: birthdays, patterns and lucky numbers make some lines very crowded. This app measures what players actually pick, using real winner counts, and helps you steer clear of the crowd. If your numbers do come up, there should be fewer people to split the prize with.</p>
+  <h3>And the bean?</h3>
+  <p>Every so often a bean drops instead of a ball, in honour of the original machine. It has exactly the same chance as everything else. That's rather the point.</p>
+  <p class="note">Statistics for entertainment, not a way to win. 18+ only. Please play responsibly. Not affiliated with the National Lottery or its operator.</p>
+  </div>`;
+}
+
 /* ---------- Views ---------- */
 function renderHeader(){
   const g=G(),ds=draws();let badge;
@@ -378,7 +469,7 @@ function renderHeader(){
   else if(!ds.length)badge=`<span class="badge">No results yet — add your worker in Settings</span>`;
   else{const t=state.meta[g.key]?.lastSync;badge=`<span class="badge">Live · ${ds.length} draws${t?' · updated '+new Date(t).toLocaleString('en-GB',{weekday:'short',hour:'2-digit',minute:'2-digit'}):''}</span>`}
   const sp=[[8,20,0],[78,14,.8],[90,52,1.6],[55,8,1.2],[30,60,2]].map(([l,t,d])=>`<i class="spark" style="left:${l}%;top:${t}px;animation-delay:${d}s"></i>`).join('');
-  $('#hdr').innerHTML=`${sp}<h1>Oddly ✦</h1><div class="sub">Stats for fun — every line has the same chance</div>
+  $('#hdr').innerHTML=`${sp}<button class="hstory${state.view==='story'?' on':''}" data-view="story" aria-label="The story">📖 Story</button><h1>Oddly ✦</h1><div class="sub">Stats for fun — every line has the same chance</div>
   <div class="seg">${Object.values(GAMES).map(x=>`<button data-game="${x.key}" class="${x.key===g.key?'on':''}">${x.name}</button>`).join('')}</div>${badge}`;
 }
 function renderNav(){
@@ -578,13 +669,14 @@ function viewSettings(){
   <div class="row"><button class="btn ghost" data-act="backup">⬇️ Back up</button><button class="btn ghost" data-act="restore">⬆️ Restore</button></div>
   <input type="file" id="restoreFile" accept=".json,application/json" style="display:none">
   <div class="note">${LS.get('lastBackup',0)?'Last backup: '+new Date(LS.get('lastBackup',0)).toLocaleString('en-GB',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}):'Not backed up yet.'} Stored: ${state.live.lotto.length} Lotto and ${state.live.euromillions.length} EuroMillions draws.</div></div>
-  <div class="card"><h2>About</h2><p class="small muted" style="margin-top:0">Oddly v${APP_VERSION}. Statistics are for entertainment — every line has the same chance in every draw. Please play responsibly.</p><p class="small muted">Not affiliated with the National Lottery or its operator.</p><button class="btn ghost" data-act="wipe">Clear stored results</button></div>`;
+  <div class="card"><h2>About</h2><p class="small muted" style="margin-top:0">Oddly v${APP_VERSION}. Statistics are for entertainment — every line has the same chance in every draw. Please play responsibly.</p><p class="small muted">Not affiliated with the National Lottery or its operator.</p><button class="btn ghost" data-view="story">📖 The story behind the app</button> <button class="btn ghost" data-act="wipe">Clear stored results</button></div>`;
 }
 
 function render(){
   renderHeader();renderNav();
-  const v={latest:viewLatest,check:viewCheck,gen:viewLines,stats:viewStats,settings:viewSettings}[state.view];
+  const v={latest:viewLatest,check:viewCheck,gen:viewLines,stats:viewStats,settings:viewSettings,story:viewStory}[state.view]||viewLatest;
   $('#view').innerHTML=v();
+  if(state.view==='story')startBeanMachine();else bm.run++;
 }
 
 /* ---------- Events ---------- */

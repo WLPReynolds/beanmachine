@@ -14,6 +14,10 @@ function loadApp({ settings } = {}) {
   const dom = new JSDOM(html, { url: 'https://lottolab.test/', runScripts: 'dangerously', pretendToBeVisual: true, virtualConsole: vc });
   const w = dom.window;
   w.scrollTo = () => {};
+  // No real animation frames in tests: a running loop would keep the test process alive.
+  // Tests that need the bean machine animation drive bmTick() by hand.
+  w.requestAnimationFrame = () => 0;
+  w.cancelAnimationFrame = () => {};
   if (settings) w.localStorage.setItem('ll_settings', JSON.stringify(settings));
   // A real classic <script>, as in the browser, so top-level const/function bindings are global
   const el = w.document.createElement('script');

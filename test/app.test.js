@@ -191,3 +191,74 @@ test('user-facing name is Oddly, with the not-affiliated line', () => {
   assert.match(v, /Not affiliated with the National Lottery or its operator/);
   assert.doesNotMatch(d.body.textContent, /Lotto Lab/);
 });
+
+/* ---------- Story page and bean machine ---------- */
+test('Story page renders the bean machine with every peg and bin', () => {
+  const a = loadApp();
+  a.get("state.view='story'; render();");
+  const d = a.window.document;
+  const svg = d.querySelector('#beanm');
+  assert.ok(svg, 'bean machine drawn');
+  const rows = a.get('BM.rows');
+  assert.equal(svg.querySelectorAll('.bm-peg').length, rows * (rows + 1) / 2);
+  assert.equal(svg.querySelectorAll('.bm-wall').length, rows + 3); // rows+2 dividers plus the floor
+  assert.match(d.querySelector('#view').textContent, /Galton/);
+  assert.match(d.querySelector('#view').textContent, /Not affiliated with the National Lottery/);
+  assert.ok(d.querySelector('#hdr [data-view="story"].on'), 'header Story button is highlighted');
+  assert.equal(a.errors.length, 0, a.errors.map(e => e.message).join('\n'));
+});
+
+test('Story is reachable from the header and from About', () => {
+  const a = loadApp();
+  a.get("state.view='settings'; render();");
+  const d = a.window.document;
+  assert.ok(d.querySelector('#hdr [data-view="story"]'));
+  assert.ok(d.querySelector('#view [data-view="story"]'));
+  d.querySelector('#view [data-view="story"]').click();
+  assert.equal(a.get('state.view'), 'story');
+  assert.ok(d.querySelector('#beanm'));
+});
+
+test('galtonBin lands in 0..rows and averages to the middle (binomial)', () => {
+  const a = loadApp();
+  const bin = a.get('galtonBin'), rng = a.get('mulberry32')(7), rows = 9, n = 20000;
+  const counts = Array(rows + 1).fill(0);
+  for (let i = 0; i < n; i++) { const k = bin(rows, rng); assert.ok(k >= 0 && k <= rows); counts[k]++; }
+  const mean = counts.reduce((s, c, k) => s + c * k, 0) / n;
+  assert.ok(Math.abs(mean - rows / 2) < 0.06, `mean ${mean}`);
+  // middle bins beat the edges, as the bell curve says
+  assert.ok(counts[4] > counts[1] * 5 && counts[5] > counts[8] * 5);
+});
+
+test('animation drops balls, lands them in bins and resets when a bin fills', () => {
+  const a = loadApp();
+  a.get("state.view='story'; render(); bm.run++;"); // stop the real loop; drive it by hand
+  const tick = a.get('bmTick');
+  const max = a.get('BM.max');
+  let t = 1000, sawSettled = 0, resets = 0, wasFading = false, tallest = 0;
+  for (let i = 0; i < 4000; i++) {
+    assert.equal(tick(t), true); t += 16;
+    const s = a.get('bm');
+    sawSettled = Math.max(sawSettled, s.settled.length);
+    if (s.fade && !wasFading) resets++;
+    wasFading = !!s.fade;
+    for (const b of s.settled) tallest = Math.max(tallest, b.h);
+  }
+  assert.ok(a.get('bm.n') > 100, 'many balls dropped');
+  assert.ok(sawSettled > 20, `balls piled up (${sawSettled})`);
+  assert.ok(resets >= 1, 'the pile reset at least once');
+  // A reset starts when a bin reaches max; balls already falling can top it up a little, never far
+  assert.ok(tallest < max + 9, `stacks stay bounded (${tallest})`);
+  // leaving the page stops the loop
+  a.get("state.view='latest'; render();");
+  assert.equal(tick(t), false);
+});
+
+test('reduced motion draws a finished pile instead of animating', () => {
+  const a = loadApp();
+  a.window.matchMedia = q => ({ matches: /reduce/.test(q) });
+  a.get("bm.settled=[]; state.view='story'; render();");
+  const n = a.window.document.querySelectorAll('#bm-settled circle, #bm-settled path').length;
+  assert.ok(n > 20, `static pile drawn (${n})`);
+  assert.equal(a.get('bm.live.length'), 0);
+});

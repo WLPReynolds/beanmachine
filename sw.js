@@ -1,6 +1,6 @@
 // Oddly service worker — network-first for the app shell so new deploys show up straight away,
 // falling back to cache when offline. Worker/API calls are never cached here (results live in IndexedDB).
-const CACHE = 'oddly-v1.1.0';
+const CACHE = 'oddly-v1.1.1';
 const PAGE = 'index.html'; // every page load is stored and served under this one name
 const SHELL = [PAGE, 'src/app.js', 'manifest.json', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png'];
 
