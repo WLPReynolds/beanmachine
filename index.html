@@ -78,6 +78,18 @@ clip-path:polygon(50% 0,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,
 .pb h4{margin:0 0 6px;font-size:13px;color:var(--gold2)}
 .pb table{font-size:13px}.pb td,.pb th{padding:4px 4px}.pb td:first-child,.pb th:first-child{text-align:left}.pb td:last-child,.pb th:last-child{text-align:right}
 .pb .meta{font-size:11px;color:var(--muted);margin-top:6px}
+.lockbadge{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:99px;background:rgba(247,201,72,.18);color:var(--gold2);font-size:12px;font-weight:800}
+.chk{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}.chk:last-child{border-bottom:0}
+.chk .box{width:24px;height:24px;flex:none;border-radius:7px;border:2px solid var(--line);display:grid;place-items:center;font-weight:900;color:#3a2300}
+.chk.on .box{background:var(--gold);border-color:var(--gold)}
+.ent{padding:8px 0;border-bottom:1px solid var(--line)}.ent:last-child{border-bottom:0}
+.ent .eh{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px;font-weight:700;font-size:14px}
+.won{color:var(--gold2);font-weight:800}
+.banner{position:relative;overflow:hidden;border-radius:18px;padding:16px;margin:12px 0;border:1px solid rgba(247,201,72,.6);background:linear-gradient(135deg,rgba(247,201,72,.35),rgba(255,95,168,.3),rgba(160,102,255,.3))}
+.banner h2{margin:0 0 6px;font-size:22px}.banner .x{position:absolute;top:8px;right:10px;border:0;background:rgba(0,0,0,.25);color:#fff;border-radius:99px;width:30px;height:30px;font-weight:900}
+.banner.quiet{border-color:var(--line);background:var(--card);padding:12px 44px 12px 16px;font-size:14px}
+.conf{position:absolute;top:-12px;width:8px;height:12px;border-radius:2px;animation:fall 2.8s linear infinite;opacity:.9;pointer-events:none}
+@keyframes fall{to{transform:translateY(240px) rotate(540deg);opacity:0}}
 .arrow{color:var(--gold2);font-weight:800;font-size:13px;margin:10px 0 6px}
 .bonus{outline:2px dashed var(--gold);outline-offset:2px}
 .drop{animation:drop .6s cubic-bezier(.3,1.6,.5,1) both}
@@ -143,7 +155,7 @@ nav button.on{color:var(--gold2)}nav button.on span{filter:none;opacity:1}
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
-const APP_VERSION='v2026-10-24.20:10';
+const APP_VERSION='v2026-10-25.07:30';
 
 /* ---------- Game definitions ---------- */
 // "since" = first draw of the current format: Lotto went to 59 balls in Oct 2015; EuroMillions to 12 Lucky Stars in Sep 2016.
@@ -164,10 +176,14 @@ const settings=Object.assign({workerUrl:'',demo:true,avoidLast:true,worthIt:5000
 const myLines=Object.assign({lotto:[],euromillions:[]},LS.get('lines',{}));
 const saveLines=()=>LS.set('lines',myLines);
 const MAX_LINES=10;
+// Locked-in entries: {id, lines:[{main,extra}], dates:['YYYY-MM-DD'], at}. Results only use live draws.
+const tickets=Object.assign({lotto:[],euromillions:[]},LS.get('tickets',{}));
+const saveTickets=()=>LS.set('tickets',tickets);
+const seen=new Set(LS.get('seen',[]));const saveSeen=()=>LS.set('seen',[...seen]);
 const saveSettings=()=>LS.set('settings',settings);
 settings.freePlan=true; // fallback only fetches this year's results; the Worker's store holds the history
 const state={game:LS.get('game','lotto'),view:'latest',live:{lotto:[],euromillions:[]},meta:LS.get('meta',{}),
-  pick:{main:new Set(),extra:new Set()},editing:null,open:new Set(),animKey:'',gen:[],statWin:'all',statPool:'main',statSort:'num'};
+  pick:{main:new Set(),extra:new Set()},editing:null,open:new Set(),lock:null,animKey:'',gen:[],statWin:'all',statPool:'main',statSort:'num'};
 const demoCache={};
 
 /* ---------- Helpers ---------- */
@@ -414,10 +430,68 @@ function crowdCard(g,ds){
   return h;
 }
 
+/* ---------- Locked entries & results ---------- */
+const EM_WIN=new Set(['5+2','5+1','5+0','4+2','4+1','4+0','3+2','3+1','3+0','2+2','2+1','2+0','1+2']);
+const LOTTO_FIXED={'2+0':1,'3+0':10,'4+0':50,'5+0':1000,'5+1':1000000};
+const expectedRounds=(g,date)=>g.roundsSince&&date>=g.roundsSince?2:1;
+const liveFor=(g,date)=>(state.live[g.key]||[]).filter(d=>d.date===date);
+const isDrawn=(g,date)=>liveFor(g,date).length>=expectedRounds(g,date);
+// Upcoming draw dates you can still buy for (sales close about 19:30 on the day)
+function upcomingDates(g,n=8){const out=[],now=new Date();for(let i=0;out.length<n&&i<60;i++){const c=new Date(now);c.setDate(now.getDate()+i);c.setHours(19,30,0,0);if(g.days.includes(c.getDay())&&c>now)out.push(iso(c))}return out}
+// Still on sale: draw date in the future, or today before sales close (19:30)
+const stillOpen=dt=>{const c=new Date(dt+'T19:30:00');return c>new Date()};
+const sameLine=(a,b)=>same(a.main,b.main)&&same(a.extra||[],b.extra||[]);
+// Pending (not yet drawn) dates this exact line is locked in for
+function lockedDates(g,line){const out=new Set();tickets[g.key].forEach(t=>{if(t.lines.some(l=>sameLine(l,line)))t.dates.forEach(dt=>{if(!isDrawn(g,dt))out.add(dt)})});return[...out].sort()}
+function prizeKeyMap(d){const m={};for(const x of d.prizes||[]){const r=/Match (\d)(?: plus (?:(\d) )?Bonus Balls?)?/i.exec(x.t||'');if(!r)continue;m[r[1]+'+'+(r[2]?+r[2]:/plus/i.test(x.t)?1:0)]=x}return m}
+function prizeFor(g,d,k){
+  if(d.prizes){const x=prizeKeyMap(d)[k];if(!x)return null;
+    if(k==='6+0'&&!g.sepPool||k==='5+2'&&g.sepPool)return{amount:x.p||d.jackpot,known:!!(x.p||d.jackpot),jackpot:true};
+    return x.p>0?{amount:x.p,known:true}:null}
+  if(!g.sepPool){if(k==='6+0')return{amount:d.jackpot,known:false,jackpot:true};return LOTTO_FIXED[k]?{amount:LOTTO_FIXED[k],known:true}:null}
+  return EM_WIN.has(k)?{amount:null,known:false,jackpot:k==='5+2'}:null;
+}
+// Result of one locked entry on one date (null until every round of that draw is stored)
+function entryResult(g,t,date){
+  if(!isDrawn(g,date))return null;
+  const rs=liveFor(g,date).sort((a,b)=>String(a.round||'').localeCompare(String(b.round||''))),wins=[];
+  t.lines.forEach((l,li)=>rs.forEach(d=>{
+    const m=inter(l.main,d.main),st=g.sepPool?inter(l.extra,d.extra):(m===5&&d.extra.some(x=>l.main.includes(x))?1:0);
+    const pr=prizeFor(g,d,m+'+'+st);if(pr)wins.push({li,round:d.round,m,st,...pr});
+  }));
+  return{wins,total:wins.reduce((a,w)=>a+(w.known?w.amount:0),0),unknown:wins.some(w=>!w.known)};
+}
+const winTxt=(g,w)=>`${w.m}${g.sepPool?(w.st?` + ${w.st}★`:''):(w.st?' + Bonus':'')}`;
+// Every drawn (game, date) you had entries for, combined across entries
+function resultsByDate(g){
+  const map={};
+  tickets[g.key].forEach(t=>t.dates.forEach(dt=>{const r=entryResult(g,t,dt);if(!r)return;
+    const e=map[dt]||(map[dt]={date:dt,lines:0,wins:[],total:0,unknown:false});
+    e.lines+=t.lines.length;r.wins.forEach(w=>e.wins.push({...w,lineNo:e.lines-t.lines.length+w.li+1}));e.total+=r.total;e.unknown=e.unknown||r.unknown}));
+  return Object.values(map).sort((a,b)=>b.date.localeCompare(a.date));
+}
+const moneyWin=v=>v>=1e6?money(v):'£'+(v%1?v.toFixed(2):Math.round(v).toLocaleString('en-GB'));
+function bannerHTML(){
+  if(settings.demo)return '';
+  let h='';
+  for(const g of Object.values(GAMES))for(const r of resultsByDate(g)){
+    const k=g.key+'|'+r.date;if(seen.has(k))continue;
+    if(!r.wins.length){h+=`<div class="banner quiet"><button class="x" data-act="seen" data-k="${k}">✕</button>🎟️ ${g.name}, ${shortDate(r.date)}: checked your ${r.lines} line${r.lines>1?'s':''} — no wins this time.</div>`;continue}
+    const conf=Array.from({length:18},(_,i)=>`<i class="conf" style="left:${(i*37)%100}%;background:${['#f7c948','#ff5fa8','#3ddc97','#2f86ff','#a066ff'][i%5]};animation-delay:${(i*0.17)%2.8}s"></i>`).join('');
+    const jp=r.wins.some(w=>w.jackpot);
+    const amt=r.total>0?moneyWin(r.total)+(r.unknown?' + more to come':''):'a prize';
+    h+=`<div class="banner">${conf}<button class="x" data-act="seen" data-k="${k}">✕</button><h2>${jp?'🤯 JACKPOT!':'🎉 You won '+amt+'!'}</h2>
+      <div class="small">${g.name}, ${fmtDate(r.date)}</div>
+      <ul class="r">${r.wins.map(w=>`<li>Line ${w.lineNo}${w.round?`, ${w.round}`:''}: matched ${winTxt(g,w)} — <b>${w.known?moneyWin(w.amount):'amount to follow'}</b></li>`).join('')}</ul>
+      ${r.unknown?`<div class="note">EuroMillions prizes are shared out, so some amounts appear once the prize breakdown is published.</div>`:''}</div>`;
+  }
+  return h;
+}
+
 /* ---------- Backup ---------- */
 function exportBackup(){
   const data={app:'lotto-lab',version:1,exported:new Date().toISOString(),
-    draws:{lotto:state.live.lotto,euromillions:state.live.euromillions},lines:myLines,
+    draws:{lotto:state.live.lotto,euromillions:state.live.euromillions},lines:myLines,tickets,seen:[...seen],
     settings:{workerUrl:settings.workerUrl,worthIt:settings.worthIt,freePlan:settings.freePlan,bonusCounts:settings.bonusCounts,avoidLast:settings.avoidLast}};
   const blob=new Blob([JSON.stringify(data)],{type:'application/json'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`lotto-lab-backup-${iso(new Date())}.json`;
@@ -439,12 +513,16 @@ async function importBackup(file){
       if(Array.isArray(l.main)&&l.main.length===g.main&&!have.has(k)&&myLines[g.key].length<MAX_LINES){myLines[g.key].push({main:l.main,extra:l.extra||[]});have.add(k);addedL++}});
   }
   saveLines();
+  let addedT=0;
+  for(const g of Object.values(GAMES)){const have=new Set(tickets[g.key].map(t=>t.id));
+    (data.tickets?.[g.key]||[]).forEach(t=>{if(t&&t.id&&!have.has(t.id)&&Array.isArray(t.lines)&&Array.isArray(t.dates)){tickets[g.key].push(t);addedT++}})}
+  saveTickets();(data.seen||[]).forEach(k=>seen.add(k));saveSeen();
   const bs=data.settings||{};
   if(!settings.workerUrl&&bs.workerUrl)settings.workerUrl=bs.workerUrl;
   for(const k of ['worthIt','freePlan','bonusCounts','avoidLast'])if(bs[k]!=null)settings[k]=bs[k];
   if(state.live.lotto.length||state.live.euromillions.length)settings.demo=false;
   saveSettings();render();
-  toast(`Restored: ${addedD} new draws, ${addedL} new lines`);
+  toast(`Restored: ${addedD} new draws, ${addedL} new lines, ${addedT} entries`);
 }
 
 /* ---------- Views ---------- */
@@ -474,7 +552,7 @@ function viewLatest(){
   const anim=state.animKey!==g.key+d.date;state.animKey=g.key+d.date;
   const lk='L'+g.key+d.date,lopen=state.open.has(lk);
   const meta=x=>x.machine||x.ballSet?`<div class="meta">Machine ${x.machine??'?'} · Ball set ${x.ballSet??'?'}</div>`:'';
-  return `${jack}<div class="card latest${lopen?' open':''}" data-grp="${lk}"><h2>${g.name} · ${fmtDate(d.date)}<span class="chev">▸</span></h2>${[...ls].reverse().map(x=>`${x.round?`<h3>${x.round}</h3>`:''}${rowBalls(g,x.main,x.extra,{fit:'fit-lg',anim})}${settings.demo?'':crowdLine(g,x)}${lopen&&(x.prizes||x.machine||x.ballSet||settings.demo)?`<div class="pb">${prizeTable(g,x)}${meta(x)}</div>`:''}`).join('')}
+  return `${bannerHTML()}${jack}<div class="card latest${lopen?' open':''}" data-grp="${lk}"><h2>${g.name} · ${fmtDate(d.date)}<span class="chev">▸</span></h2>${[...ls].reverse().map(x=>`${x.round?`<h3>${x.round}</h3>`:''}${rowBalls(g,x.main,x.extra,{fit:'fit-lg',anim})}${settings.demo?'':crowdLine(g,x)}${lopen&&(x.prizes||x.machine||x.ballSet||settings.demo)?`<div class="pb">${prizeTable(g,x)}${meta(x)}</div>`:''}`).join('')}
   ${nd?`<div class="note">Next draw: ${nd.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'short'})}</div>`:''}</div>
   <div class="card"><h2>Recent draws</h2>${recentHTML(g,ds)}</div>`;
 }
@@ -546,11 +624,13 @@ function viewLines(){
   const {ls}=lastDrawn(g,ds),when=shortDate(ls[0].date)+(ls.length>1?' (both rounds)':'');
   let h=`<div class="card"><h2>My ${g.name} lines</h2><p class="small muted" style="margin:0">Numbers that came up on <b>${when}</b> are swapped for one of the least-drawn numbers${g.sepPool?' (stars for stars)':''}.${g.sepPool?'':settings.bonusCounts?' The bonus ball counts as drawn.':' The bonus ball is ignored.'}</p>
   ${lines.length?'':`<p>No lines saved yet.</p>`}</div>`;
+  if(state.lock)h+=lockPanel(g);
   lines.forEach((l,i)=>{
-    const s=lineSugg(g,ds,l),hm=new Set(s.hitM),hx=new Set(s.hitX),p=popularity(g,l.main,ds);
-    h+=`<div class="card"><div class="lhead"><b>Line ${i+1}</b><div class="row"><button class="ibtn" data-act="checkline" data-i="${i}">Check</button><button class="ibtn" data-act="editline" data-i="${i}">Edit</button><button class="ibtn" data-act="delline" data-i="${i}">✕</button></div></div>
-    ${rowBalls(g,l.main,l.extra,{mark:(n,isX)=>(isX?hx:hm).has(n)?'hit':''})}`;
-    if(s.none)h+=`<p class="small" style="margin:10px 0 0">✅ None came up on ${shortDate(ls[0].date)} — keep it as it is.</p>`;
+    const s=lineSugg(g,ds,l),hm=new Set(s.hitM),hx=new Set(s.hitX),p=popularity(g,l.main,ds),lk=lockedDates(g,l);
+    h+=`<div class="card"><div class="lhead"><b>Line ${i+1}</b><div class="row"><button class="ibtn" data-act="checkline" data-i="${i}">Check</button>${lk.length?'':`<button class="ibtn" data-act="editline" data-i="${i}">Edit</button><button class="ibtn" data-act="delline" data-i="${i}">✕</button>`}</div></div>
+    ${rowBalls(g,l.main,l.extra,{mark:lk.length?null:(n,isX)=>(isX?hx:hm).has(n)?'hit':''})}`;
+    if(lk.length){h+=`<p class="small" style="margin:10px 0 0"><span class="lockbadge">🔒 Locked in</span> for ${lk.map(shortDate).join(', ')}. It can't be changed until ${lk.length>1?'those draws have':'that draw has'} happened.</p>`}
+    else if(s.none)h+=`<p class="small" style="margin:10px 0 0">✅ None came up on ${shortDate(ls[0].date)} — keep it as it is.</p>`;
     else{
       const nm=new Set(s.newM),nx=new Set(s.newX),gone=[...s.hitM,...s.hitX.map(n=>n+'★')];
       h+=`<div class="arrow">↓ ${gone.join(', ')} came up — for the next draw:</div>
@@ -560,9 +640,30 @@ function viewLines(){
     }
     h+=`<div class="note">Popularity ${p.score}/100 · <span class="pill p-${p.band}">${{low:'Low',med:'Medium',high:'High'}[p.band]}</span></div></div>`;
   });
-  if(lines.length<MAX_LINES)h+=`<button class="btn block" data-act="addline">＋ Add a line</button>`;
+  h+=`<div class="row" style="margin:4px 0 0">${lines.length<MAX_LINES?`<button class="btn ghost" data-act="addline">＋ Add a line</button>`:''}${lines.length&&!state.lock?`<button class="btn" data-act="lockopen">🔒 Lock in lines</button>`:''}</div>`;
+  h+=entriesCard(g);
   h+=`<div class="note">Replacements come from the least-drawn numbers across the ${ds.length} draws stored so far${settings.freePlan?' — this pool gets more meaningful as history builds up':''}.</div>`;
   return h+viewGen(true);
+}
+function lockPanel(g){
+  const L=myLines[g.key],up=upcomingDates(g),lk=state.lock;
+  return `<div class="card" style="border-color:var(--gold)"><h2>🔒 Lock in lines</h2><p class="small muted" style="margin-top:0">Tick the lines you've bought and the draws they're for. Locked lines can't be changed until their draws have happened; you can still add more.</p>
+  <h3>Lines</h3>${L.map((l,i)=>`<div class="chk ${lk.sel.has(i)?'on':''}" data-act="locksel" data-i="${i}"><span class="box">${lk.sel.has(i)?'✓':''}</span><b class="small" style="width:44px">Line ${i+1}</b>${rowBalls(g,l.main,l.extra,{fit:'fit'})}</div>`).join('')}
+  <h3>Draws</h3><div class="chips">${up.map(dt=>`<button class="chip ${lk.dates.has(dt)?'on':''}" data-act="lockdate" data-d="${dt}">${shortDate(dt)}</button>`).join('')}</div>
+  <div class="note">Away for a while? Tick every draw until you're back.</div>
+  <div class="row" style="margin-top:12px"><button class="btn" data-act="lockgo">Lock in ${lk.sel.size} line${lk.sel.size===1?'':'s'} × ${lk.dates.size} draw${lk.dates.size===1?'':'s'}</button><button class="btn ghost" data-act="lockcancel">Cancel</button></div></div>`;
+}
+function entriesCard(g){
+  const T=tickets[g.key];if(!T.length)return '';
+  const pend={};T.forEach(t=>t.dates.forEach(dt=>{if(!isDrawn(g,dt))(pend[dt]=pend[dt]||[]).push(t)}));
+  const pd=Object.keys(pend).sort();
+  let h=`<div class="card"><h2>🎟️ My entries</h2>`;
+  if(pd.length)h+=`<h3>Coming up</h3>`+pd.map(dt=>`<div class="ent"><div class="eh"><span>${shortDate(dt)}</span>${stillOpen(dt)?'':'<span class="muted small">waiting for results</span>'}</div>${pend[dt].map(t=>{
+      const canUndo=t.dates.every(stillOpen);
+      return t.lines.map(l=>`<div class="rr">${rowBalls(g,l.main,l.extra,{fit:'fit'})}</div>`).join('')+(canUndo?`<button class="ibtn" style="margin:2px 0 6px" data-act="delticket" data-id="${t.id}">Undo this lock${t.dates.length>1?` (all ${t.dates.length} draws)`:''}</button>`:'')}).join('')}</div>`).join('');
+  const past=resultsByDate(g).slice(0,8);
+  if(past.length)h+=`<h3>Results</h3>`+past.map(r=>`<div class="ent"><div class="eh"><span>${shortDate(r.date)}</span><span class="${r.wins.length?'won':'muted small'}">${r.wins.length?(r.total>0?moneyWin(r.total):'')+(r.unknown?(r.total>0?' + ':'')+'amount to follow':''):'No win'}</span></div>${r.wins.map(w=>`<div class="small">Line ${w.lineNo}${w.round?`, ${w.round}`:''}: matched ${winTxt(g,w)}${w.known?` — ${moneyWin(w.amount)}`:''}</div>`).join('')}</div>`).join('');
+  return h+`</div>`;
 }
 function viewGen(embedded){
   const g=G(),ds=draws();if(!ds.length)return noData();
@@ -660,7 +761,18 @@ document.addEventListener('click',async e=>{
     if(a==='spin'){state.gen=Array.from({length:settings.genLines},()=>({...generate(g,ds),fresh:true}))}
     if(a==='checkgen'){const l=state.gen[+t.dataset.i];state.pick={main:new Set(l.main),extra:new Set(l.extra)};state.view='check';render();setTimeout(()=>document.querySelectorAll('.card')[1]?.scrollIntoView({behavior:'smooth'}),50);return}
     const L=myLines[g.key],li=+t.dataset.i,toCheck=()=>{state.view='check';render();scrollTo(0,0)};
+    if(a==='lockopen'){const up=upcomingDates(g);state.lock={sel:new Set(L.map((_,i)=>i)),dates:new Set(up.slice(0,1))};render();scrollTo(0,0);return}
+    if(a==='lockcancel')state.lock=null;
+    if(a==='locksel'){state.lock.sel.has(li)?state.lock.sel.delete(li):state.lock.sel.add(li);const y=scrollY;render();scrollTo(0,y);return}
+    if(a==='lockdate'){const d=t.dataset.d;state.lock.dates.has(d)?state.lock.dates.delete(d):state.lock.dates.add(d);const y=scrollY;render();scrollTo(0,y);return}
+    if(a==='lockgo'){const lk=state.lock;if(!lk.sel.size||!lk.dates.size){toast('Pick at least one line and one draw');return}
+      tickets[g.key].push({id:Date.now().toString(36)+Math.random().toString(36).slice(2,6),lines:[...lk.sel].sort((x,y)=>x-y).map(i=>({main:[...L[i].main],extra:[...(L[i].extra||[])]})),dates:[...lk.dates].sort(),at:new Date().toISOString()});
+      saveTickets();state.lock=null;toast(`🔒 Locked in for ${[...lk.dates].sort().map(shortDate).join(', ')}`)}
+    if(a==='delticket'){const T=tickets[g.key],ix=T.findIndex(x=>x.id===t.dataset.id);
+      if(ix>=0&&T[ix].dates.every(stillOpen)&&confirm('Undo this lock? Use this only if you locked something by mistake.')){T.splice(ix,1);saveTickets();toast('Lock removed')}}
+    if(a==='seen'){seen.add(t.dataset.k);saveSeen()}
     if(a==='addline'){if(L.length>=MAX_LINES){toast(`Up to ${MAX_LINES} lines`);return}state.editing=-1;state.pick={main:new Set(),extra:new Set()};toCheck();return}
+    if((a==='editline'||a==='delline'||a==='acceptline')&&lockedDates(g,L[li]).length){toast('That line is locked in');return}
     if(a==='editline'||a==='checkline'){state.editing=a==='editline'?li:null;state.pick={main:new Set(L[li].main),extra:new Set(L[li].extra)};toCheck();return}
     if(a==='delline'){if(!confirm(`Delete Line ${li+1}?`))return;L.splice(li,1);saveLines()}
     if(a==='acceptline'){const s=L[li].sugg;if(s&&!s.none){L[li]={main:s.main,extra:s.extra};saveLines();toast('Line updated ✨')}}
