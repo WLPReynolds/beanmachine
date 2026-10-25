@@ -15,7 +15,7 @@ test('app boots in demo mode and renders every screen without errors', () => {
     assert.ok(w.document.querySelector('#view').innerHTML.length > 0, `view ${view} rendered`);
   }
   assert.equal(app.errors.length, 0, app.errors.map(e => e.message).join('\n'));
-  assert.match(w.document.querySelector('#view').innerHTML, new RegExp('Lotto Lab v' + app.get('APP_VERSION').replace(/\./g, '\\.')));
+  assert.match(w.document.querySelector('#view').innerHTML, new RegExp('Oddly v' + app.get('APP_VERSION').replace(/\./g, '\\.')));
 });
 
 /* ---------- Crowd score constants match the combinatorics in the brief ---------- */
@@ -134,4 +134,60 @@ test('suggestFor treats EuroMillions stars separately', () => {
   assert.deepEqual([...s.hitX], [2]);
   assert.ok(!s.main.some(n => n <= 5));
   assert.ok(s.extra.includes(9) && !s.extra.some(n => n === 1 || n === 2));
+});
+
+/* ---------- Back up / Restore across the rename ---------- */
+const backupFile = app => ({ text: async () => JSON.stringify({
+  app, version: 1, exported: '2026-10-25T14:00:00Z',
+  draws: { lotto: [{ date: '2026-10-24', round: 'Round 1', main: [1, 11, 21, 31, 41, 51], extra: [2], jackpot: null, prizes: null }], euromillions: [] },
+  lines: { lotto: [{ main: [3, 14, 25, 36, 47, 58], extra: [] }], euromillions: [] },
+  tickets: { lotto: [{ id: 't-' + app, lines: [{ main: [3, 14, 25, 36, 47, 58], extra: [] }], dates: ['2026-10-28'], at: '2026-10-25T13:00:00Z' }], euromillions: [] },
+  seen: [], settings: { workerUrl: 'https://proxy.example.workers.dev', worthIt: 100000000 },
+}) });
+
+for (const id of ['lotto-lab', 'oddly']) {
+  test(`Restore accepts a "${id}" backup, including locked entries`, async () => {
+    const a = loadApp();
+    await a.window.importBackup(backupFile(id));
+    const t = a.get('tickets.lotto');
+    assert.equal(t.length, 1);
+    assert.deepEqual([...t[0].dates], ['2026-10-28']);
+    assert.deepEqual([...a.get('myLines.lotto')[0].main], [3, 14, 25, 36, 47, 58]);
+    assert.equal(a.get('settings.workerUrl'), 'https://proxy.example.workers.dev');
+    assert.equal(a.get('state.live.lotto').length, 1);
+    // Restoring the same file again adds nothing twice
+    await a.window.importBackup(backupFile(id));
+    assert.equal(a.get('tickets.lotto').length, 1);
+    assert.equal(a.get('myLines.lotto').length, 1);
+  });
+}
+
+test('Restore rejects files from other apps', async () => {
+  const a = loadApp();
+  await a.window.importBackup(backupFile('something-else'));
+  assert.equal(a.get('tickets.lotto').length, 0);
+  assert.match(a.window.document.querySelector('#toast').textContent, /isn't an Oddly backup/);
+});
+
+test('Back up writes an oddly backup with the dated file name', () => {
+  const a = loadApp();
+  let blob, name;
+  a.window.URL.createObjectURL = b => { blob = b; return 'blob:x'; };
+  a.window.URL.revokeObjectURL = () => {};
+  a.window.HTMLAnchorElement.prototype.click = function () { name = this.download; };
+  a.window.exportBackup();
+  assert.match(name, /^oddly-backup-\d{4}-\d{2}-\d{2}\.json$/);
+  assert.ok(blob);
+});
+
+test('user-facing name is Oddly, with the not-affiliated line', () => {
+  const a = loadApp();
+  const d = a.window.document;
+  assert.equal(d.title, 'Oddly');
+  a.get('render()');
+  assert.match(d.querySelector('#hdr').textContent, /Oddly/);
+  a.get("state.view='settings'; render();");
+  const v = d.querySelector('#view').textContent;
+  assert.match(v, /Not affiliated with the National Lottery or its operator/);
+  assert.doesNotMatch(d.body.textContent, /Lotto Lab/);
 });

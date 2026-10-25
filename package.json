@@ -1,6 +1,6 @@
 {
-  "name": "lotto-lab",
-  "version": "1.0.1",
+  "name": "oddly",
+  "version": "1.1.0",
   "private": true,
   "description": "Fun statistics for UK Lotto and EuroMillions (PWA)",
   "scripts": {

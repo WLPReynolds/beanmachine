@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.0.1';
+const APP_VERSION='1.1.0';
 
 /* ---------- Game definitions ---------- */
 // "since" = first draw of the current format: Lotto went to 59 balls in Oct 2015; EuroMillions to 12 Lucky Stars in Sep 2016.
@@ -333,18 +333,20 @@ function bannerHTML(){
 }
 
 /* ---------- Backup ---------- */
+const BACKUP_APPS=['oddly','lotto-lab'];
 function exportBackup(){
-  const data={app:'lotto-lab',version:1,exported:new Date().toISOString(),
+  const data={app:'oddly',version:1,exported:new Date().toISOString(),
     draws:{lotto:state.live.lotto,euromillions:state.live.euromillions},lines:myLines,tickets,seen:[...seen],
     settings:{workerUrl:settings.workerUrl,worthIt:settings.worthIt,freePlan:settings.freePlan,bonusCounts:settings.bonusCounts,avoidLast:settings.avoidLast}};
   const blob=new Blob([JSON.stringify(data)],{type:'application/json'});
-  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`lotto-lab-backup-${iso(new Date())}.json`;
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`oddly-backup-${iso(new Date())}.json`;
   document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),5000);
   LS.set('lastBackup',Date.now());toast('Backup saved to Downloads');
 }
 async function importBackup(file){
-  let data;try{data=JSON.parse(await file.text())}catch(e){toast('That file isn\'t a Lotto Lab backup');return}
-  if(data?.app!=='lotto-lab'||!data.draws){toast('That file isn\'t a Lotto Lab backup');return}
+  let data;try{data=JSON.parse(await file.text())}catch(e){toast('That file isn\'t an Oddly backup');return}
+  // 'lotto-lab' = backups made before the rename to Oddly (Oct 2026)
+  if(!BACKUP_APPS.includes(data?.app)||!data.draws){toast('That file isn\'t an Oddly backup');return}
   let addedD=0,addedL=0;
   for(const g of Object.values(GAMES)){
     // Draws: merge, so nothing already on this device is lost
@@ -376,7 +378,7 @@ function renderHeader(){
   else if(!ds.length)badge=`<span class="badge">No results yet — add your worker in Settings</span>`;
   else{const t=state.meta[g.key]?.lastSync;badge=`<span class="badge">Live · ${ds.length} draws${t?' · updated '+new Date(t).toLocaleString('en-GB',{weekday:'short',hour:'2-digit',minute:'2-digit'}):''}</span>`}
   const sp=[[8,20,0],[78,14,.8],[90,52,1.6],[55,8,1.2],[30,60,2]].map(([l,t,d])=>`<i class="spark" style="left:${l}%;top:${t}px;animation-delay:${d}s"></i>`).join('');
-  $('#hdr').innerHTML=`${sp}<h1>Lotto Lab ✦</h1><div class="sub">Stats for fun — every line has the same chance</div>
+  $('#hdr').innerHTML=`${sp}<h1>Oddly ✦</h1><div class="sub">Stats for fun — every line has the same chance</div>
   <div class="seg">${Object.values(GAMES).map(x=>`<button data-game="${x.key}" class="${x.key===g.key?'on':''}">${x.name}</button>`).join('')}</div>${badge}`;
 }
 function renderNav(){
@@ -567,7 +569,7 @@ function viewSettings(){
   const esc=s=>String(s).replace(/[&"<>]/g,c=>({'&':'&amp;','"':'&quot;','<':'&lt;','>':'&gt;'}[c]));
   return `<div class="card"><h2>Data</h2>
   <div class="tog"><span>Use sample data<div class="small muted">Simulated draws for trying things out</div></span><label class="sw"><input type="checkbox" data-set="demo" ${settings.demo?'checked':''}><span></span></label></div>
-  <label class="f">Worker URL</label><input type="url" id="wurl" placeholder="https://lotto-lab.yourname.workers.dev" value="${esc(settings.workerUrl)}">
+  <label class="f">Worker URL</label><input type="url" id="wurl" placeholder="https://your-proxy.yourname.workers.dev" value="${esc(settings.workerUrl)}">
   <div class="row" style="margin-top:10px"><button class="btn ghost" data-act="saveurl">Save</button>${settings.freePlan?'':'<button class="btn ghost" data-act="syncfull">Sync all history</button>'}<button class="btn ghost" data-act="sync">Get latest</button></div>
   <div class="note">${state.meta.remaining?`API calls left: <b>${state.meta.remaining.n}</b>${state.meta.remaining.limit?' / '+state.meta.remaining.limit:''} (as of ${new Date(state.meta.remaining.at).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}). The free plan allows 100 a month and one month of history. `:''}${storeNote()}</div></div>
   <div class="card"><h2>Lotto</h2><div class="tog"><span>Bonus ball counts as drawn<div class="small muted">For My lines: if the bonus is one of your numbers, it gets swapped too</div></span><label class="sw"><input type="checkbox" data-set="bonusCounts" ${settings.bonusCounts?'checked':''}><span></span></label></div></div>
@@ -576,7 +578,7 @@ function viewSettings(){
   <div class="row"><button class="btn ghost" data-act="backup">⬇️ Back up</button><button class="btn ghost" data-act="restore">⬆️ Restore</button></div>
   <input type="file" id="restoreFile" accept=".json,application/json" style="display:none">
   <div class="note">${LS.get('lastBackup',0)?'Last backup: '+new Date(LS.get('lastBackup',0)).toLocaleString('en-GB',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}):'Not backed up yet.'} Stored: ${state.live.lotto.length} Lotto and ${state.live.euromillions.length} EuroMillions draws.</div></div>
-  <div class="card"><h2>About</h2><p class="small muted" style="margin-top:0">Lotto Lab v${APP_VERSION}. Statistics are for entertainment — every line has the same chance in every draw. Please play responsibly.</p><button class="btn ghost" data-act="wipe">Clear stored results</button></div>`;
+  <div class="card"><h2>About</h2><p class="small muted" style="margin-top:0">Oddly v${APP_VERSION}. Statistics are for entertainment — every line has the same chance in every draw. Please play responsibly.</p><p class="small muted">Not affiliated with the National Lottery or its operator.</p><button class="btn ghost" data-act="wipe">Clear stored results</button></div>`;
 }
 
 function render(){

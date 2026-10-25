@@ -23,7 +23,7 @@ else {
 const edits = [
   ['package.json', /"version":\s*"[^"]+"/, `"version": "${next}"`],
   ['src/app.js', /const APP_VERSION='[^']+';/, `const APP_VERSION='${next}';`],
-  ['sw.js', /const CACHE = 'lottolab-v[^']+';/, `const CACHE = 'lottolab-v${next}';`],
+  ['sw.js', /const CACHE = 'oddly-v[^']+';/, `const CACHE = 'oddly-v${next}';`],
   ['index.html', /src="src\/app\.js\?v=[^"]+"/, `src="src/app.js?v=${next}"`],
 ];
 for (const [f, re, rep] of edits) {

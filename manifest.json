@@ -1,7 +1,7 @@
 {
-  "id": "./index.html?app=lotto-lab",
-  "name": "Lotto Lab",
-  "short_name": "Lotto Lab",
+  "id": "./index.html?app=oddly",
+  "name": "Oddly",
+  "short_name": "Oddly",
   "description": "Fun statistics for UK Lotto and EuroMillions",
   "start_url": "./index.html",
   "scope": "./",
