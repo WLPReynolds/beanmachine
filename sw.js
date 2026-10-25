@@ -1,10 +1,25 @@
 // Lotto Lab service worker — network-first for the app shell so new deploys show up straight away,
 // falling back to cache when offline. Worker/API calls are never cached here (results live in IndexedDB).
-const CACHE = 'lottolab-v1.0.0';
-const SHELL = ['./', 'index.html', 'src/app.js', 'manifest.json', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png'];
+const CACHE = 'lottolab-v1.0.1';
+const PAGE = 'index.html'; // every page load is stored and served under this one name
+const SHELL = [PAGE, 'src/app.js', 'manifest.json', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png'];
+
+// cache: 'reload' skips the browser's HTTP cache, so a new version never precaches an older file
+const fresh = u => fetch(new Request(u, { cache: 'reload' }));
+// A page load can't be answered with a followed redirect, so hand back a plain copy instead
+const unredirect = r => r.redirected
+  ? r.blob().then(b => new Response(b, { status: r.status, statusText: r.statusText, headers: r.headers }))
+  : r;
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  e.waitUntil(
+    caches.open(CACHE)
+      .then(c => Promise.all(SHELL.map(u => fresh(u).then(r => {
+        if (!r.ok) throw new Error(`Precache failed for ${u}: HTTP ${r.status}`);
+        return c.put(u, r);
+      }))))
+      .then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener('activate', e => {
@@ -16,11 +31,17 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
-  const url = new URL(e.request.url);
-  if (e.request.method !== 'GET' || url.origin !== location.origin) return; // leave worker calls alone
+  const req = e.request, url = new URL(req.url);
+  if (req.method !== 'GET' || url.origin !== location.origin) return; // leave worker calls alone
+  const nav = req.mode === 'navigate';
+  const key = nav ? PAGE : req;
   e.respondWith(
-    fetch(e.request)
-      .then(r => { const copy = r.clone(); caches.open(CACHE).then(c => c.put(e.request, copy)); return r; })
-      .catch(() => caches.match(e.request).then(r => r || caches.match(e.request, { ignoreSearch: true })).then(r => r || caches.match('index.html')))
+    (nav ? fresh(req.url).then(unredirect) : fetch(req))
+      .then(r => {
+        if (r.ok) { const copy = r.clone(); e.waitUntil(caches.open(CACHE).then(c => c.put(key, copy))); }
+        return r;
+      })
+      .catch(() => caches.open(CACHE).then(c =>
+        c.match(key).then(r => r || c.match(req, { ignoreSearch: true })).then(r => r || c.match(PAGE))))
   );
 });

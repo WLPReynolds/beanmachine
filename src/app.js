@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.0.0';
+const APP_VERSION='1.0.1';
 
 /* ---------- Game definitions ---------- */
 // "since" = first draw of the current format: Lotto went to 59 balls in Oct 2015; EuroMillions to 12 Lucky Stars in Sep 2016.
