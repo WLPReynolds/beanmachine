@@ -1,7 +1,7 @@
 {
-  "id": "./index.html?app=oddly",
-  "name": "Oddly",
-  "short_name": "Oddly",
+  "id": "./index.html?app=beanmachine",
+  "name": "Bean Machine",
+  "short_name": "Bean Machine",
   "description": "Fun statistics for UK Lotto and EuroMillions",
   "start_url": "./index.html",
   "scope": "./",

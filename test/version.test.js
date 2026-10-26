@@ -9,7 +9,7 @@ test('version matches in package.json, src/app.js, sw.js and index.html', () => 
   const pkg = JSON.parse(read('package.json')).version;
   assert.match(pkg, /^\d+\.\d+\.\d+$/);
   assert.equal(/const APP_VERSION='([^']+)';/.exec(read('src/app.js'))?.[1], pkg, 'src/app.js APP_VERSION');
-  assert.equal(/const CACHE = 'oddly-v([^']+)';/.exec(read('sw.js'))?.[1], pkg, 'sw.js CACHE');
+  assert.equal(/const CACHE = 'beanmachine-v([^']+)';/.exec(read('sw.js'))?.[1], pkg, 'sw.js CACHE');
   assert.equal(/src="src\/app\.js\?v=([^"]+)"/.exec(read('index.html'))?.[1], pkg, 'index.html script tag');
 });
 
@@ -28,12 +28,12 @@ test('manifest icons and page icon links point at real files', () => {
     assert.ok(fs.existsSync(path.join(__dirname, '..', f)), `missing ${f}`);
 });
 
-test('manifest is Oddly with its own install id, and CNAME is the Oddly domain', () => {
+test('manifest is Bean Machine with its own install id, and CNAME is the Bean Machine domain', () => {
   const m = JSON.parse(read('manifest.json'));
-  assert.equal(m.name, 'Oddly');
-  assert.equal(m.short_name, 'Oddly');
-  assert.equal(m.id, './index.html?app=oddly');
+  assert.equal(m.name, 'Bean Machine');
+  assert.equal(m.short_name, 'Bean Machine');
+  assert.equal(m.id, './index.html?app=beanmachine');
   assert.equal(m.start_url, './index.html');
   assert.equal(m.scope, './');
-  assert.equal(read('CNAME').trim(), 'oddly.slightlygood.app');
+  assert.equal(read('CNAME').trim(), 'beanmachine.slightlygood.app');
 });

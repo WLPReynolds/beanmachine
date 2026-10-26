@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.1.1';
+const APP_VERSION='1.2.0';
 
 /* ---------- Game definitions ---------- */
 // "since" = first draw of the current format: Lotto went to 59 balls in Oct 2015; EuroMillions to 12 Lucky Stars in Sep 2016.
@@ -333,20 +333,20 @@ function bannerHTML(){
 }
 
 /* ---------- Backup ---------- */
-const BACKUP_APPS=['oddly','lotto-lab'];
+const BACKUP_APPS=['beanmachine','oddly','lotto-lab'];
 function exportBackup(){
-  const data={app:'oddly',version:1,exported:new Date().toISOString(),
+  const data={app:'beanmachine',version:1,exported:new Date().toISOString(),
     draws:{lotto:state.live.lotto,euromillions:state.live.euromillions},lines:myLines,tickets,seen:[...seen],
     settings:{workerUrl:settings.workerUrl,worthIt:settings.worthIt,freePlan:settings.freePlan,bonusCounts:settings.bonusCounts,avoidLast:settings.avoidLast}};
   const blob=new Blob([JSON.stringify(data)],{type:'application/json'});
-  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`oddly-backup-${iso(new Date())}.json`;
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`beanmachine-backup-${iso(new Date())}.json`;
   document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),5000);
   LS.set('lastBackup',Date.now());toast('Backup saved to Downloads');
 }
 async function importBackup(file){
-  let data;try{data=JSON.parse(await file.text())}catch(e){toast('That file isn\'t an Oddly backup');return}
-  // 'lotto-lab' = backups made before the rename to Oddly (Oct 2026)
-  if(!BACKUP_APPS.includes(data?.app)||!data.draws){toast('That file isn\'t an Oddly backup');return}
+  let data;try{data=JSON.parse(await file.text())}catch(e){toast('That file isn\'t a Bean Machine backup');return}
+  // 'oddly' and 'lotto-lab' = backups made under the app's earlier names (Oct 2026)
+  if(!BACKUP_APPS.includes(data?.app)||!data.draws){toast('That file isn\'t a Bean Machine backup');return}
   let addedD=0,addedL=0;
   for(const g of Object.values(GAMES)){
     // Draws: merge, so nothing already on this device is lost
@@ -469,7 +469,7 @@ function renderHeader(){
   else if(!ds.length)badge=`<span class="badge">No results yet — add your worker in Settings</span>`;
   else{const t=state.meta[g.key]?.lastSync;badge=`<span class="badge">Live · ${ds.length} draws${t?' · updated '+new Date(t).toLocaleString('en-GB',{weekday:'short',hour:'2-digit',minute:'2-digit'}):''}</span>`}
   const sp=[[8,20,0],[78,14,.8],[90,52,1.6],[55,8,1.2],[30,60,2]].map(([l,t,d])=>`<i class="spark" style="left:${l}%;top:${t}px;animation-delay:${d}s"></i>`).join('');
-  $('#hdr').innerHTML=`${sp}<button class="hstory${state.view==='story'?' on':''}" data-view="story" aria-label="The story">📖 Story</button><h1>Oddly ✦</h1><div class="sub">Stats for fun — every line has the same chance</div>
+  $('#hdr').innerHTML=`${sp}<button class="hstory${state.view==='story'?' on':''}" data-view="story" aria-label="The story">📖 Story</button><h1>Bean Machine ✦</h1><div class="sub">Stats for fun — every line has the same chance</div>
   <div class="seg">${Object.values(GAMES).map(x=>`<button data-game="${x.key}" class="${x.key===g.key?'on':''}">${x.name}</button>`).join('')}</div>${badge}`;
 }
 function renderNav(){
@@ -669,7 +669,7 @@ function viewSettings(){
   <div class="row"><button class="btn ghost" data-act="backup">⬇️ Back up</button><button class="btn ghost" data-act="restore">⬆️ Restore</button></div>
   <input type="file" id="restoreFile" accept=".json,application/json" style="display:none">
   <div class="note">${LS.get('lastBackup',0)?'Last backup: '+new Date(LS.get('lastBackup',0)).toLocaleString('en-GB',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}):'Not backed up yet.'} Stored: ${state.live.lotto.length} Lotto and ${state.live.euromillions.length} EuroMillions draws.</div></div>
-  <div class="card"><h2>About</h2><p class="small muted" style="margin-top:0">Oddly v${APP_VERSION}. Statistics are for entertainment — every line has the same chance in every draw. Please play responsibly.</p><p class="small muted">Not affiliated with the National Lottery or its operator.</p><button class="btn ghost" data-view="story">📖 The story behind the app</button> <button class="btn ghost" data-act="wipe">Clear stored results</button></div>`;
+  <div class="card"><h2>About</h2><p class="small muted" style="margin-top:0">Bean Machine v${APP_VERSION}. Statistics are for entertainment — every line has the same chance in every draw. Please play responsibly.</p><p class="small muted">Not affiliated with the National Lottery or its operator.</p><button class="btn ghost" data-view="story">📖 The story behind the app</button> <button class="btn ghost" data-act="wipe">Clear stored results</button></div>`;
 }
 
 function render(){
