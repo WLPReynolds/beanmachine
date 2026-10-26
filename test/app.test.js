@@ -15,7 +15,7 @@ test('app boots in demo mode and renders every screen without errors', () => {
     assert.ok(w.document.querySelector('#view').innerHTML.length > 0, `view ${view} rendered`);
   }
   assert.equal(app.errors.length, 0, app.errors.map(e => e.message).join('\n'));
-  assert.match(w.document.querySelector('#view').innerHTML, new RegExp('Oddly v' + app.get('APP_VERSION').replace(/\./g, '\\.')));
+  assert.match(w.document.querySelector('#view').innerHTML, new RegExp('Bean Machine v' + app.get('APP_VERSION').replace(/\./g, '\\.')));
 });
 
 /* ---------- Crowd score constants match the combinatorics in the brief ---------- */
@@ -145,7 +145,7 @@ const backupFile = app => ({ text: async () => JSON.stringify({
   seen: [], settings: { workerUrl: 'https://proxy.example.workers.dev', worthIt: 100000000 },
 }) });
 
-for (const id of ['lotto-lab', 'oddly']) {
+for (const id of ['lotto-lab', 'oddly', 'beanmachine']) {
   test(`Restore accepts a "${id}" backup, including locked entries`, async () => {
     const a = loadApp();
     await a.window.importBackup(backupFile(id));
@@ -166,26 +166,26 @@ test('Restore rejects files from other apps', async () => {
   const a = loadApp();
   await a.window.importBackup(backupFile('something-else'));
   assert.equal(a.get('tickets.lotto').length, 0);
-  assert.match(a.window.document.querySelector('#toast').textContent, /isn't an Oddly backup/);
+  assert.match(a.window.document.querySelector('#toast').textContent, /isn't a Bean Machine backup/);
 });
 
-test('Back up writes an oddly backup with the dated file name', () => {
+test('Back up writes a beanmachine backup with the dated file name', () => {
   const a = loadApp();
   let blob, name;
   a.window.URL.createObjectURL = b => { blob = b; return 'blob:x'; };
   a.window.URL.revokeObjectURL = () => {};
   a.window.HTMLAnchorElement.prototype.click = function () { name = this.download; };
   a.window.exportBackup();
-  assert.match(name, /^oddly-backup-\d{4}-\d{2}-\d{2}\.json$/);
+  assert.match(name, /^beanmachine-backup-\d{4}-\d{2}-\d{2}\.json$/);
   assert.ok(blob);
 });
 
-test('user-facing name is Oddly, with the not-affiliated line', () => {
+test('user-facing name is Bean Machine, with the not-affiliated line', () => {
   const a = loadApp();
   const d = a.window.document;
-  assert.equal(d.title, 'Oddly');
+  assert.equal(d.title, 'Bean Machine');
   a.get('render()');
-  assert.match(d.querySelector('#hdr').textContent, /Oddly/);
+  assert.match(d.querySelector('#hdr').textContent, /Bean Machine/);
   a.get("state.view='settings'; render();");
   const v = d.querySelector('#view').textContent;
   assert.match(v, /Not affiliated with the National Lottery or its operator/);

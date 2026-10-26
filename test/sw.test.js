@@ -132,8 +132,8 @@ test('install fails loudly if a shell file is missing', async () => {
 test('activate deletes old caches; other origins are left alone', async () => {
   const sw = makeSW();
   seed(sw, 'page');
-  sw.stores.set('oddly-v0.0.1', new Map());
+  sw.stores.set('beanmachine-v0.0.1', new Map());
   await sw.lifecycle('install'); await sw.lifecycle('activate');
-  assert.deepEqual([...sw.stores.keys()].filter(k => k.startsWith('oddly-')).length, 1);
+  assert.deepEqual([...sw.stores.keys()].filter(k => k.startsWith('beanmachine-')).length, 1);
   assert.equal(await sw.request('https://lotto-lab-proxy.example.workers.dev/history'), null);
 });
