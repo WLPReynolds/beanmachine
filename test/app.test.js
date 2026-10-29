@@ -514,3 +514,48 @@ test('on Android the Install button uses the browser prompt, and Not now hides i
   assert.equal(doc.querySelector('.card.install'), null, 'snoozed');
   assert.equal(a.errors.length, 0, a.errors.map(x => x.message).join('\n'));
 });
+
+/* ---------- Stats access codes ---------- */
+test('Stats are locked without a code, and a good code unlocks them on this phone', async () => {
+  const a = loadApp({ stats: false });
+  const w = a.window, doc = w.document;
+  const urls = [];
+  let answer = { ok: false, reason: 'full' };
+  w.fetch = async u => { urls.push(String(u)); return { ok: true, json: async () => answer }; };
+  await new Promise(r => setTimeout(r, 50)); // let the app finish starting up (it renders once its storage opens)
+  a.get("settings.workerUrl='https://w.test'; state.view='stats'; render();");
+  assert.match(doc.querySelector('#view').textContent, /invited testers/);
+  assert.equal(doc.querySelector('#view').textContent.includes('Is it random?'), false);
+  doc.querySelector('#statscode').value = 'abcd-efgh';
+  doc.querySelector('[data-act="unlockstats"]').click();
+  await new Promise(r => setTimeout(r, 10));
+  assert.match(urls[0], /\/unlock\?code=ABCD-EFGH&device=[0-9a-f]{32}$/);
+  assert.match(doc.querySelector('#toast').textContent, /already in use/);
+  assert.match(doc.querySelector('#view').textContent, /invited testers/); // still locked
+  answer = { ok: true };
+  doc.querySelector('[data-act="unlockstats"]').click();
+  await new Promise(r => setTimeout(r, 10));
+  assert.equal(urls[1].split('device=')[1], urls[0].split('device=')[1], 'same phone ID each time');
+  assert.doesNotMatch(doc.querySelector('#view').textContent, /invited testers/);
+  assert.deepEqual(JSON.parse(w.localStorage.getItem('ll_statsAccess')), { code: 'ABCD-EFGH', ok: true });
+  assert.equal(a.errors.length, 0, a.errors.map(x => x.message).join('\n'));
+});
+
+test('a sync that says the code was removed locks Stats again; Latest and Check stay free', async () => {
+  const a = loadApp({ settings: { demo: false, workerUrl: 'https://w.test' }, stats: false });
+  const w = a.window, doc = w.document;
+  w.localStorage.setItem('ll_statsAccess', JSON.stringify({ code: 'ABCD-EFGH', ok: true }));
+  a.get("statsAccess.code='ABCD-EFGH'; statsAccess.ok=true");
+  const urls = [];
+  const d = { date: '2026-10-28', round: 'Round 1', main: [2, 4, 21, 26, 30, 38], extra: [51], prizes: null };
+  w.fetch = async u => { urls.push(String(u)); return { ok: true, json: async () => ({ draws: [d], full: true, rev: 'r', stats: false }) }; };
+  await w.syncGame(a.get('GAMES.lotto'));
+  assert.match(urls.pop(), /&code=ABCD-EFGH&device=[0-9a-f]{32}$/);
+  assert.equal(a.get('statsAccess.ok'), false);
+  a.get("state.game='lotto'; state.view='stats'; render();");
+  assert.match(doc.querySelector('#view').textContent, /invited testers/);
+  for (const v of ['latest', 'check', 'gen']) {
+    a.get(`state.view='${v}'; render();`);
+    assert.doesNotMatch(doc.querySelector('#view').textContent, /invited testers/, v);
+  }
+});
