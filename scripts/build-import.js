@@ -7,10 +7,11 @@
 //     --lottometrics-em euromillions_2004-2025.json \
 //     --nl-lotto lotto-draw-history.csv \
 //     --nl-em euromillions-draw-history.csv \
-//     --emapi-em em2026.json
+//     --emapi-em em2026.json \
+//     --lottonet-lotto lottonet-lotto.json
 //
 // Every option is optional; give whichever files you have. Where sources overlap, the higher-priority one
-// is kept (national-lottery > euromillions-api > lottometrics) and the numbers are checked against each other.
+// is kept (national-lottery > euromillions-api, lotto-net > lottometrics) and the numbers are checked against each other.
 // Only current-format draws are kept (Lotto from 10 Oct 2015, EuroMillions from 27 Sep 2016).
 'use strict';
 const fs = require('fs');
@@ -23,6 +24,7 @@ const GAMES = {
 const SOURCES = {
   'national-lottery': { name: 'The National Lottery draw history download (CSV, last ~180 days)', priority: 3 },
   'euromillions-api': { name: 'euromillions.api.pedromealha.dev (JSON; prize tables are Europe-wide, in euros)', priority: 2 },
+  'lotto-net': { name: 'lotto.net results archive (read from its yearly pages; JSON [{date, main, bonus}])', priority: 2 },
   lottometrics: { name: 'lottometrics.app (JSON; its dates are one day early and are corrected here)', priority: 1 },
 };
 
@@ -78,6 +80,13 @@ const readers = {
       return Object.assign(d, { machine: tidy(r.Machine), ballSet: tidy(r['Ball Set']), drawNo: Number(r.DrawNumber) || null, ...(mm.length ? { mm } : {}) });
     });
   },
+  lottoNet(file) {
+    return JSON.parse(fs.readFileSync(file, 'utf8')).map(r => {
+      // Pre-rounds draws only: lotto.net lists one line per date
+      if (r.date >= GAMES.lotto.roundsSince) throw new Error(`lotto.net ${r.date}: Lotto has two rounds from ${GAMES.lotto.roundsSince}; add a round to this reader first`);
+      return base(r.date, null, r.main.map(Number), [Number(r.bonus)], 'lotto-net');
+    });
+  },
   emApi(file) {
     return JSON.parse(fs.readFileSync(file, 'utf8')).map(r => {
       const d = base(r.date, null, r.numbers.map(Number), r.stars.map(Number), 'euromillions-api');
@@ -98,7 +107,7 @@ function check(g, d) {
 
 const key = d => d.date + '|' + (d.round || '');
 const plan = {
-  lotto: [['lottometrics-lotto', 'lottometrics'], ['nl-lotto', 'nlLotto']],
+  lotto: [['lottometrics-lotto', 'lottometrics'], ['lottonet-lotto', 'lottoNet'], ['nl-lotto', 'nlLotto']],
   euromillions: [['lottometrics-em', 'lottometrics'], ['emapi-em', 'emApi'], ['nl-em', 'nlEm']],
 };
 
