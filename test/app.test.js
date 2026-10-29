@@ -412,3 +412,46 @@ test('historyQuery stays full for an older Worker that sends no import revision'
   a.get("state.meta.lotto.store.rev=''");
   assert.equal(a.get('historyQuery(GAMES.lotto)'), '/history?game=lotto&since=2026-09-18&rev=');
 });
+
+/* ---------- Droughts, consecutive numbers and line totals ---------- */
+test('consecutiveDist is a full distribution and matches the known chance of a pair', () => {
+  const near = (a, b, t = 1e-9) => assert.ok(Math.abs(a - b) < t, `${a} vs ${b}`);
+  for (const [N, k, anyPair] of [[59, 6, 0.42679], [50, 5, 0.35304]]) {
+    const d = [...fn('consecutiveDist')(N, k)];
+    near(d.reduce((a, b) => a + b, 0), 1);
+    near(1 - d[0], anyPair, 1e-5);
+    near(d[0], fn('comb')(N - k + 1, k) / fn('comb')(N, k)); // no-neighbour lines: C(N−k+1, k)
+  }
+  assert.equal(fn('pairsIn')([3, 4, 5, 20, 40, 41]), 3);
+  assert.equal(fn('pairsIn')([1, 3, 5, 7, 9, 11]), 0);
+});
+
+test('sumDist covers every total with the right mean', () => {
+  const d = [...fn('sumDist')(59, 6)];
+  assert.ok(Math.abs(d.reduce((a, b) => a + b, 0) - 1) < 1e-9);
+  const mean = d.reduce((a, p, s) => a + p * s, 0);
+  assert.ok(Math.abs(mean - 180) < 1e-6, String(mean));
+  assert.ok(Math.abs(d[21] - 1 / fn('comb')(59, 6)) < 1e-15); // only 1-2-3-4-5-6 adds up to 21
+});
+
+test('droughts measures the gaps between appearances, newest draw first', () => {
+  // Oldest → newest (draws 0–6): 1 is in draws 1, 4, 6 (gaps 3, 2); 3 is in 0, 2, 3 (gaps 2, 1); 2 only in 5
+  const ds = [[3], [1], [3], [3], [1], [2], [1]].reverse().map(m => ({ main: m }));
+  const r = fn('droughts')(ds, 3, d => d.main);
+  assert.deepEqual([...r.gaps].sort((a, b) => a - b), [1, 2, 2, 3]);
+  // Draws since each last appeared: 1 in the newest draw, 2 one draw ago, 3 three draws ago
+  assert.deepEqual([...r.current].map(c => [c.x, c.g]), [[1, 0], [2, 1], [3, 3]]);
+});
+
+test('stats shows the new chance cards for main balls, and only the drought card for stars', () => {
+  const doc = app.window.document;
+  app.get("state.game='lotto'; state.view='stats'; state.statPool='main'; state.statWin='all'; render();");
+  let h = doc.querySelector('#view').innerHTML;
+  for (const t of ['Is “overdue” real?', 'Consecutive numbers', 'Line totals']) assert.ok(h.includes(t), t);
+  app.get("state.game='euromillions'; state.statPool='extra'; render();");
+  h = doc.querySelector('#view').innerHTML;
+  assert.ok(h.includes('Is “overdue” real?'));
+  assert.ok(!h.includes('Consecutive numbers') && !h.includes('Line totals'));
+  app.get("state.statPool='main'; render();");
+  assert.equal(app.errors.length, 0, app.errors.map(e => e.message).join('\n'));
+});

@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.2.4';
+const APP_VERSION='1.2.5';
 
 /* ---------- Game definitions ---------- */
 // "since" = first draw of the current format: Lotto went to 59 balls in Oct 2015; EuroMillions to 12 Lucky Stars in Sep 2016.
@@ -696,6 +696,72 @@ function dayCard(g,ds){
   return h+`<div class="note">A fun look back — none of this changes the next draw.</div></div>`;
 }
 
+/* ---------- What chance predicts: droughts, consecutive numbers, sums ---------- */
+// Bars of what happened, with a white mark where chance puts each one (rows: {l: label, obs: %, exp: %})
+function chanceBars(rows){
+  const top=Math.max(1e-9,...rows.map(r=>Math.max(r.obs,r.exp)));
+  return `<div class="bars">${rows.map(r=>`<div class="b"><span>${r.l}</span><div class="t"><i style="width:${r.obs/top*100}%"></i><u style="left:${Math.min(r.exp/top*100,99.5)}%"></u></div><span class="small">${r.obs<1&&r.obs>0?'<1':r.obs.toFixed(0)}%</span></div>`).join('')}</div><div class="note">Bars = what happened. White marks = what chance predicts.</div>`;
+}
+// Gaps between a number's appearances, pooled over every number. ds is newest first; each draw (or round) counts as one.
+function droughts(ds,N,pick){
+  const last=Array(N+1).fill(null),gaps=[];
+  for(let i=ds.length-1;i>=0;i--){const at=ds.length-1-i;pick(ds[i]).forEach(x=>{if(last[x]!==null)gaps.push(at-last[x]);last[x]=at})}
+  const current=[...Array(N).keys()].map(i=>i+1).map(x=>({x,g:last[x]===null?null:ds.length-1-last[x]}));
+  return{gaps,current};
+}
+// Draw-to-draw chance a given number comes up is p = k/N, so a gap of exactly g draws has chance p(1−p)^(g−1)
+const geoAtLeast=(p,g)=>Math.pow(1-p,g-1);
+function droughtCard(g,ds,isStar){
+  const N=isStar?g.extraMax:g.mainMax,k=isStar?g.extra:g.main,p=k/N,pick=d=>isStar?d.extra:d.main;
+  const {gaps,current}=droughts(ds,N,pick);if(gaps.length<20)return '';
+  const w=Math.max(1,Math.round(1/p/2)),nb=8,rows=[];
+  for(let b=0;b<nb;b++){
+    const lo=b*w+1,hi=b===nb-1?Infinity:(b+1)*w;
+    const obs=gaps.filter(x=>x>=lo&&x<=hi).length/gaps.length*100;
+    const exp=(geoAtLeast(p,lo)-(hi===Infinity?0:geoAtLeast(p,hi+1)))*100;
+    rows.push({l:hi===Infinity?`${lo}+`:lo===hi?`${lo}`:`${lo}–${hi}`,obs,exp});
+  }
+  const longest=Math.max(...gaps),cur=current.filter(c=>c.g!==null).sort((a,b)=>b.g-a.g)[0];
+  const odds=x=>{const v=geoAtLeast(p,x+1)*100;return v>=1?`${v.toFixed(0)}%`:v>=0.1?`${v.toFixed(1)}%`:'under 0.1%'};
+  const ball1=x=>isStar?ball(x,g,{star:true,sm:true}):ball(x,g,{sm:true});
+  return `<div class="card"><h2>Is “overdue” real?</h2><p class="small muted" style="margin-top:0">How many draws each ${isStar?'star':'number'} waited between appearances, over ${gaps.length.toLocaleString('en-GB')} waits. Every draw is a fresh start, so a ${isStar?'star':'number'} that's been away a long time is no more likely to come up next.</p>
+  ${chanceBars(rows)}
+  ${cur?`<div class="row" style="margin-top:12px;gap:10px;align-items:center;flex-wrap:nowrap">${ball1(cur.x)}<span class="small" style="flex:1">Away longest right now: <b>${cur.g} draws</b>. Any given ${isStar?'star':'number'} stays away that long about ${odds(cur.g)} of the time. Its chance next draw is still ${(p*100).toFixed(0)}%.</span></div>`:''}
+  <div class="note">Longest wait in this window: ${longest} draws. Long waits are part of the curve, not a sign that something is due.</div></div>`;
+}
+// Draws (k of 1..N) with exactly j consecutive pairs: C(k−1, j)·C(N−k+1, k−j)
+function consecutiveDist(N,k){return[...Array(k).keys()].map(j=>comb(k-1,j)*comb(N-k+1,k-j)/comb(N,k))}
+const pairsIn=main=>{const a=[...main].sort((x,y)=>x-y);let n=0;for(let i=1;i<a.length;i++)if(a[i]-a[i-1]===1)n++;return n};
+function consecutiveCard(g,ds){
+  const dist=consecutiveDist(g.mainMax,g.main),n=ds.length,cnt=Array(4).fill(0);
+  ds.forEach(d=>cnt[Math.min(3,pairsIn(d.main))]++);
+  const exp=[dist[0],dist[1],dist[2],dist.slice(3).reduce((a,b)=>a+b,0)];
+  const rows=['None','1 pair','2 pairs','3+'].map((l,i)=>({l,obs:cnt[i]/n*100,exp:exp[i]*100}));
+  const any=(n-cnt[0])/n*100;
+  return `<div class="card"><h2>Consecutive numbers</h2><p class="small muted" style="margin-top:0">Draws containing neighbours like 14 and 15 (a run of three counts as two pairs). They feel “not random”, but chance puts at least one pair in <b>${((1-dist[0])*100).toFixed(1)}%</b> of draws. Here: <b>${any.toFixed(1)}%</b>.</p>${chanceBars(rows)}</div>`;
+}
+// How many k-number draws from 1..N add up to each total (counted exactly, not simulated)
+const sumCache={};
+function sumDist(N,k){
+  const key=N+'/'+k;if(sumCache[key])return sumCache[key];
+  const max=k*N,dp=[...Array(k+1)].map(()=>new Float64Array(max+1));dp[0][0]=1;
+  for(let x=1;x<=N;x++)for(let j=Math.min(k,x);j>=1;j--)for(let s=max;s>=x;s--)dp[j][s]+=dp[j-1][s-x];
+  const tot=comb(N,k);return sumCache[key]=Array.from(dp[k],v=>v/tot);
+}
+function sumCard(g,ds){
+  const N=g.mainMax,k=g.main,dist=sumDist(N,k),n=ds.length,mid=k*(N+1)/2;
+  const lo=k*(k+1)/2,hi=k*(2*N-k+1)/2,sd=Math.sqrt(k*(N+1)*(N-k)/12),w=Math.max(5,Math.round(sd/2/5)*5),rows=[];
+  // Bins centred on the middle total, with the thin tails folded into the end bins
+  const edges=[];for(let e=Math.round(mid-w*3.5);e<=mid+w*3.5;e+=w)edges.push(e);
+  const sums=ds.map(d=>d.main.reduce((a,b)=>a+b,0));
+  for(let i=0;i<=edges.length;i++){
+    const a=i===0?lo:edges[i-1],b=i===edges.length?hi:edges[i]-1;if(a>b)continue;
+    let e=0;for(let s=a;s<=b;s++)e+=dist[s]||0;
+    rows.push({l:i===0?`≤${b}`:i===edges.length?`${a}+`:`${a}–${b}`,obs:sums.filter(s=>s>=a&&s<=b).length/n*100,exp:e*100});
+  }
+  const avg=sums.reduce((a,b)=>a+b,0)/n;
+  return `<div class="card"><h2>Line totals</h2><p class="small muted" style="margin-top:0">Add up the ${k} main numbers of each draw. Totals can run from ${lo} to ${hi}, but most land near the middle (${mid}) just by chance, the same bell curve as the bean machine. Average here: <b>${avg.toFixed(1)}</b>.</p>${chanceBars(rows)}<div class="note">Every line has the same chance whatever its total. Middle totals are common only because many more lines add up to them.</div></div>`;
+}
 // Draw days with no stored draw, between the oldest and newest draws given, grouped into runs
 function missingRuns(g,ds){
   if(ds.length<2)return{n:0,runs:[]};
@@ -744,6 +810,7 @@ function viewStats(){
   h+=`<div class="card"><h2>Hot & cold</h2>${g.sepPool&&!isStar?`<h3 class="dayh">Main numbers</h3>`:''}${rankBlock(g,'Most drawn',rankTies(nums,cnt,size,1),cnt,isStar,hk+':hot')}${rankBlock(g,'Least drawn',rankTies(nums,cnt,size,-1),cnt,isStar,hk+':cold')}${stars}
   <h3>Longest absent</h3>${isStar?`<div class="balls">${absent.map(x=>ball(x,g,{star:true,sm:true})).join('')}</div>`:lineBalls(g,absent,[],{sm:true})}<div class="note">${absent.map(x=>`${x}: ${since[x]??'—'} draws ago`).join(' · ')}</div>
   <div class="note">A fun look back — none of this changes the next draw.</div></div>`;
+  h+=droughtCard(g,ds,isStar);
   h+=dayCard(g,ds);
   h+=`<div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Every ${isStar?'star':'number'}</h2><div class="chips">${[['num','1→'+N],['freq','By count']].map(([v,l])=>`<button class="chip ${state.statSort===v?'on':''}" data-sort="${v}">${l}</button>`).join('')}</div></div>
   <div class="fgrid" style="margin-top:12px">${order.map(x=>`<div class="fcell">${isStar?ball(x,g,{star:true,sm:true}):ball(x,g,{sm:true})}<span>${cnt[x]}</span><div class="fbar"><i style="width:${mx===mn?50:((cnt[x]-mn)/(mx-mn)*100)}%"></i></div></div>`).join('')}</div></div>`;
@@ -753,6 +820,8 @@ function viewStats(){
     const rows=oc.map((c,j)=>({j,obs:c/n*100,exp:comb(odd,j)*comb(even,g.main-j)/tot*100}));
     const top=Math.max(...rows.map(r=>Math.max(r.obs,r.exp)));
     h+=`<div class="card"><h2>Odd / even split</h2><div class="bars">${rows.map(r=>`<div class="b"><span>${r.j} odd</span><div class="t"><i style="width:${r.obs/top*100}%"></i><u style="left:${r.exp/top*100}%"></u></div><span class="small">${r.obs.toFixed(0)}%</span></div>`).join('')}</div><div class="note">Bars = what happened. White marks = what chance predicts.</div></div>`;
+    h+=consecutiveCard(g,ds);
+    h+=sumCard(g,ds);
   }
   return h;
 }
