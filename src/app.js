@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.2.1';
+const APP_VERSION='1.2.2';
 
 /* ---------- Game definitions ---------- */
 // "since" = first draw of the current format: Lotto went to 59 balls in Oct 2015; EuroMillions to 12 Lucky Stars in Sep 2016.
@@ -109,7 +109,7 @@ async function syncGame(g,full){
     (r.draws||[]).forEach(d=>{if(valid(g,d))map.set(dKey(d),d)});
     state.live[g.key]=sortDraws([...map.values()]);
     await DB.set('draws_'+g.key,state.live[g.key]);
-    state.meta[g.key]={lastSync:Date.now(),nextJackpot:r.nextJackpot??state.meta[g.key]?.nextJackpot??null,store:{updatedAt:r.updatedAt,lastRun:r.lastRun,count:(r.draws||[]).length}};
+    state.meta[g.key]={lastSync:Date.now(),nextJackpot:r.nextJackpot??state.meta[g.key]?.nextJackpot??null,store:{updatedAt:r.updatedAt,lastRun:r.lastRun,count:r.apiCount??(r.draws||[]).length,imported:r.imported||null}};
     LS.set('meta',state.meta);return;
   }catch(e){
     // Older Worker (no /history) or KV not set up: fall back to asking the API directly
@@ -488,13 +488,22 @@ function viewLatest(){
   }
   const anim=state.animKey!==g.key+d.date;state.animKey=g.key+d.date;
   const lk='L'+g.key+d.date,lopen=state.open.has(lk);
-  const meta=x=>x.machine||x.ballSet?`<div class="meta">Machine ${x.machine??'?'} · Ball set ${x.ballSet??'?'}</div>`:'';
-  return `${bannerHTML()}${jack}<div class="card latest${lopen?' open':''}" data-grp="${lk}"><h2>${g.name} · ${fmtDate(d.date)}<span class="chev">▸</span></h2>${[...ls].reverse().map(x=>`${x.round?`<h3>${x.round}</h3>`:''}${rowBalls(g,x.main,x.extra,{fit:'fit-lg',anim})}${settings.demo?'':crowdLine(g,x)}${lopen&&(x.prizes||x.machine||x.ballSet||settings.demo)?`<div class="pb">${prizeTable(g,x)}${meta(x)}</div>`:''}`).join('')}
+  const meta=drawMeta;
+  return `${bannerHTML()}${jack}<div class="card latest${lopen?' open':''}" data-grp="${lk}"><h2>${g.name} · ${fmtDate(d.date)}<span class="chev">▸</span></h2>${[...ls].reverse().map(x=>`${x.round?`<h3>${x.round}</h3>`:''}${rowBalls(g,x.main,x.extra,{fit:'fit-lg',anim})}${settings.demo?'':crowdLine(g,x)}${lopen&&(x.prizes||x.machine||x.ballSet||x.drawNo||(x.src&&x.src!=='api')||settings.demo)?`<div class="pb">${prizeTable(g,x)}${meta(x)}</div>`:''}`).join('')}
   ${nd?`<div class="note">Next draw: ${nd.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'short'})}</div>`:''}</div>
   <div class="card"><h2>Recent draws</h2>${recentHTML(g,ds)}</div>`;
 }
 // Prize breakdown table for one draw/round, top tier first
 function prizeMoney(v){if(!(v>0))return '—';if(v>=1e6)return money(v);return '£'+(v%1?v.toFixed(2):Math.round(v).toLocaleString('en-GB'))}
+// Where a draw came from. Draws without `src` were stored before imports existed, so they came from the API.
+const SRC_NAMES={lottometrics:'lottometrics.app','national-lottery':'the official results download','euromillions-api':'a EuroMillions results API'};
+function drawMeta(x){
+  const bits=[];
+  if(x.machine||x.ballSet)bits.push(`Machine ${x.machine??'?'} · Ball set ${x.ballSet??'?'}`);
+  if(x.drawNo)bits.push(`Draw ${x.drawNo}`);
+  if(x.src&&x.src!=='api')bits.push(`Imported from ${SRC_NAMES[x.src]||x.src}`);
+  return bits.length?`<div class="meta">${bits.join(' · ')}</div>`:'';
+}
 function prizeTable(g,d){
   if(!d.prizes)return settings.demo?`<p class="small muted" style="margin:0">Sample data has no prize breakdown.</p>`:'';
   const rows=d.prizes.map(x=>{const r=/Match (\d)(?: plus (?:(\d) )?Bonus Balls?)?/i.exec(x.t||'');if(!r)return null;
@@ -509,7 +518,7 @@ function recentHTML(g,ds){
     const rs=ds.filter(x=>x.date===dt).sort((a,b)=>String(a.round||'').localeCompare(String(b.round||'')));
     const chips=settings.demo?'':rs.map(x=>{const c=crowd(g,x);return c?`${x.round?`<span class="small muted">${x.round.replace('Round ','R')}</span>`:''}${cwChip(c.main,true)}`:''}).join(' ');
     const open=state.open.has(g.key+dt);
-    const detail=!open?'':rs.map(x=>`<div class="pb">${x.round?`<h4>${x.round}</h4>`:''}${settings.demo?'':crowdLine(g,x)}${prizeTable(g,x)}${x.machine||x.ballSet?`<div class="meta">Machine ${x.machine??'?'} · Ball set ${x.ballSet??'?'}</div>`:''}</div>`).join('');
+    const detail=!open?'':rs.map(x=>`<div class="pb">${x.round?`<h4>${x.round}</h4>`:''}${settings.demo?'':crowdLine(g,x)}${prizeTable(g,x)}${drawMeta(x)}</div>`).join('');
     return `<div class="grp${open?' open':''}" data-grp="${g.key+dt}"><div class="dt"><span>${shortDate(dt)}<span class="chev">▸</span></span><span class="cws">${chips}</span></div>${rs.map(x=>x.round
       ?`<div class="rr"><span class="lbl">${x.round}</span>${rowBalls(g,x.main,x.extra,{fit:'fit'})}</div>`
       :`<div class="rr">${rowBalls(g,x.main,x.extra,{fit:'fit-md'})}</div>`).join('')}${detail}</div>`}).join('');
@@ -677,6 +686,24 @@ function dayCard(g,ds){
   return h+`<div class="note">A fun look back — none of this changes the next draw.</div></div>`;
 }
 
+// Draw days with no stored draw, between the oldest and newest draws given, grouped into runs
+function missingRuns(g,ds){
+  if(ds.length<2)return{n:0,runs:[]};
+  const have=new Set(ds.map(d=>d.date)),runs=[];let n=0,cur=null;
+  for(let d=new Date(ds[ds.length-1].date+'T12:00:00');iso(d)<=ds[0].date;d.setDate(d.getDate()+1)){
+    if(!g.days.includes(d.getDay()))continue;
+    const k=iso(d);
+    if(have.has(k)){cur=null;continue}
+    n++;if(cur){cur.to=k;cur.n++}else runs.push(cur={from:k,to:k,n:1});
+  }
+  return{n,runs};
+}
+function gapNote(g,ds){
+  const m=missingRuns(g,ds);if(!m.n)return '';
+  const sd=s=>new Date(s+'T12:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
+  const big=[...m.runs].sort((a,b)=>b.n-a.n).slice(0,2).map(r=>r.from===r.to?sd(r.from):`${sd(r.from)} – ${sd(r.to)}`);
+  return `<div class="note" style="color:var(--warn)">${m.n} draw date${m.n===1?' is':'s are'} missing from this window (${big.join('; ')}${m.runs.length>2?'; and others':''}). Counts are from the draws that are here, and “draws ago” skips the gap.</div>`;
+}
 function viewStats(){
   const g=G(),all=draws();if(!all.length)return noData();
   const wins={all:all.length,'100':100,'26':26},ds=all.slice(0,Math.min(all.length,wins[state.statWin]));
@@ -692,7 +719,7 @@ function viewStats(){
   const absent=[...nums].sort((a,b)=>(since[b]??1e9)-(since[a]??1e9)).slice(0,isStar?5:g.main);
   let h=`<div class="card"><div class="chips">${[['all','All '+all.length],['100','Last 100'],['26','Last 26']].map(([v,l])=>`<button class="chip ${state.statWin===v?'on':''}" data-win="${v}">${l}</button>`).join('')}</div>
   ${g.sepPool?`<div class="chips" style="margin-top:8px">${[['main','Main balls'],['extra','Lucky Stars']].map(([v,l])=>`<button class="chip ${pool===v?'on':''}" data-pool="${v}">${l}</button>`).join('')}</div>`:''}
-  <div class="note">${n} draws${state.statWin==='all'?' since '+fmtDate(g.since)+' (current format)':''}. Expected per ${isStar?'star':'number'}: ${exp.toFixed(1)}.</div></div>`;
+  <div class="note">${n} draws${state.statWin==='all'?' since '+fmtDate(g.since)+' (current format)':''}. Expected per ${isStar?'star':'number'}: ${exp.toFixed(1)}.</div>${settings.demo?'':gapNote(g,ds)}</div>`;
   if(!isStar&&!settings.demo)h+=crowdCard(g,ds);
   h+=`<div class="card"><h2>Is it random?</h2><div class="row" style="justify-content:space-between"><span class="pill ${pv>.05?'p-low':pv>.01?'p-med':'p-high'}">${pv>.05?'Looks random':pv>.01?'Slightly unusual':'Unusual spread'}</span><span class="muted small">χ² ${x2.toFixed(1)} · df ${df} · p ${pv<.001?'<0.001':pv.toFixed(3)}</span></div>
   <p class="small" style="margin-bottom:0">${pv>.05?`The ups and downs between numbers are about what pure chance produces. “Hot” and “cold” numbers are just noise.`:`The spread is a bit lumpier than chance usually gives. With small windows that happens now and then — it isn't a signal to bet on.`}</p></div>`;
@@ -725,7 +752,15 @@ function storeNote(){
   if(!st.some(x=>x.s))return `Calls made directly from this device this month: <b>${callsThisMonth()}</b>.`;
   const when=t=>t?new Date(t).toLocaleString('en-GB',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'never';
   return `<br>Results come from your Worker, which fetches them itself after each draw (about 35 API calls a month). Opening the app or tapping <b>Get latest</b> costs no API calls.`+
-    st.map(({g,s})=>!s?'':`<br>${g.name}: ${s.count} draws stored, last fetched ${when(s.updatedAt)}${s.lastRun&&!s.lastRun.ok?` · <span style="color:var(--warn)">last attempt failed (${s.lastRun.error}) — it'll retry at the next scheduled run</span>`:''}`).join('');
+    st.map(({g,s})=>!s?'':`<br>${g.name}: ${s.count} draws stored, last fetched ${when(s.updatedAt)}${s.lastRun&&!s.lastRun.ok?` · <span style="color:var(--warn)">last attempt failed (${s.lastRun.error}) — it'll retry at the next scheduled run</span>`:''}${importNote(s.imported)}`).join('');
+}
+// Imported history, kept apart from the API's on the Worker and labelled by source
+function importNote(im){
+  if(!im)return '';
+  const src=Object.entries(im.sources||{}).map(([k,v])=>`${SRC_NAMES[k]||k} ${v.kept}${v.from?` (${v.from.slice(0,4)}${v.to&&v.to.slice(0,4)!==v.from.slice(0,4)?'–'+v.to.slice(0,4):''})`:''}`).join(', ');
+  const mm=im.mismatches||[];
+  return `<br><span class="muted">+ ${im.count.toLocaleString('en-GB')} imported: ${src}.${im.overlap?` ${im.overlap} overlap with the API`:''}${im.overlap&&!mm.length?' and agree.':im.overlap?'.':''}</span>`+
+    (mm.length?` <span style="color:var(--warn)">${mm.length} disagree with the API (${mm.slice(0,3).map(m=>m.date+(m.round?' '+m.round.replace('Round ','R'):'')).join(', ')}${mm.length>3?'…':''}) — the API's numbers are used.</span>`:'');
 }
 function viewSettings(){
   const esc=s=>String(s).replace(/[&"<>]/g,c=>({'&':'&amp;','"':'&quot;','<':'&lt;','>':'&gt;'}[c]));
