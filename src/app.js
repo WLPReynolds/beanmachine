@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.2.2';
+const APP_VERSION='1.2.3';
 
 /* ---------- Game definitions ---------- */
 // "since" = first draw of the current format: Lotto went to 59 balls in Oct 2015; EuroMillions to 12 Lucky Stars in Sep 2016.
@@ -496,7 +496,7 @@ function viewLatest(){
 // Prize breakdown table for one draw/round, top tier first
 function prizeMoney(v){if(!(v>0))return '—';if(v>=1e6)return money(v);return '£'+(v%1?v.toFixed(2):Math.round(v).toLocaleString('en-GB'))}
 // Where a draw came from. Draws without `src` were stored before imports existed, so they came from the API.
-const SRC_NAMES={lottometrics:'lottometrics.app','national-lottery':'the official results download','euromillions-api':'a EuroMillions results API'};
+const SRC_NAMES={lottometrics:'lottometrics.app','lotto-net':'lotto.net','national-lottery':'the official results download','euromillions-api':'a EuroMillions results API'};
 function drawMeta(x){
   const bits=[];
   if(x.machine||x.ballSet)bits.push(`Machine ${x.machine??'?'} · Ball set ${x.ballSet??'?'}`);

@@ -369,3 +369,15 @@ test('build-import fixes lottometrics dates, keeps the current format, prefers o
   assert.ok(e.gaps.includes('2026-01-02'));
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('build-import reads lotto.net draws and tags them by source', () => {
+  const fs = require('fs'), os = require('os'), path = require('path'), { execFileSync } = require('child_process');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bm-import-'));
+  const f = path.join(dir, 'ln.json');
+  fs.writeFileSync(f, JSON.stringify([{ date: '2026-01-03', main: [6, 20, 34, 38, 47, 48], bonus: 4 }]));
+  execFileSync(process.execPath, [path.join(__dirname, '..', 'scripts', 'build-import.js'), '--out', dir, '--lottonet-lotto', f], { stdio: 'pipe' });
+  const v = JSON.parse(fs.readFileSync(path.join(dir, 'imported-lotto.json'), 'utf8'));
+  assert.deepEqual(v.draws.map(d => [d.date, d.round, d.extra[0], d.src]), [['2026-01-03', null, 4, 'lotto-net']]);
+  assert.match(fn('drawMeta')({ src: 'lotto-net' }), /Imported from lotto\.net/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
