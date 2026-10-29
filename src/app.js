@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.2.5';
+const APP_VERSION='1.2.6';
 
 /* ---------- Game definitions ---------- */
 // "since" = first draw of the current format: Lotto went to 59 balls in Oct 2015; EuroMillions to 12 Lucky Stars in Sep 2016.
@@ -16,7 +16,10 @@ const DB={db:null,mem:{},
   set(k,v){this.mem[k]=v;if(!this.db)return Promise.resolve();return new Promise(res=>{try{const t=this.db.transaction('kv','readwrite');t.objectStore('kv').put(v,k);t.oncomplete=()=>res();t.onerror=()=>res()}catch(e){res()}})}
 };
 
-const settings=Object.assign({workerUrl:'',demo:true,avoidLast:true,worthIt:50000000,genLines:3,freePlan:true,bonusCounts:true},LS.get('settings',{}));
+// Built in so a fresh install shows real results straight away. Not a secret: the Worker only answers
+// browser requests from the Bean Machine address, and reading the stored history costs no API calls.
+const DEFAULT_WORKER='https://lotto-lab-proxy.wayne-lee-paul-reynolds.workers.dev';
+const settings=Object.assign({workerUrl:DEFAULT_WORKER,demo:false,avoidLast:true,worthIt:50000000,genLines:3,freePlan:true,bonusCounts:true},LS.get('settings',{}));
 const myLines=Object.assign({lotto:[],euromillions:[]},LS.get('lines',{}));
 const saveLines=()=>LS.set('lines',myLines);
 const MAX_LINES=10;
@@ -139,9 +142,10 @@ async function syncGame(g,full){
   state.meta[g.key]={lastSync:Date.now(),nextJackpot:nextJackpot??state.meta[g.key]?.nextJackpot??null};LS.set('meta',state.meta);
 }
 async function syncAll(full,quiet){
+  state.syncing=true;if(!draws().length)render();
   try{for(const g of Object.values(GAMES))await syncGame(g,full);if(!quiet)toast('Results updated ✨')}
-  catch(e){if(!quiet)toast('Update failed: '+e.message)}
-  render();
+  catch(e){if(!quiet)toast('Update failed: '+e.message);state.syncError=e.message}
+  state.syncing=false;render();
 }
 function lastResultsTime(g){const now=new Date();for(let i=0;i<8;i++){const c=new Date(now);c.setDate(now.getDate()-i);c.setHours(22,30,0,0);if(g.days.includes(c.getDay())&&c<=now)return c.getTime()}return 0}
 function nextDraw(g){const now=new Date();for(let i=0;i<8;i++){const c=new Date(now);c.setDate(now.getDate()+i);c.setHours(20,0,0,0);if(g.days.includes(c.getDay())&&c>now)return c}}
@@ -374,7 +378,8 @@ async function importBackup(file){
     (data.tickets?.[g.key]||[]).forEach(t=>{if(t&&t.id&&!have.has(t.id)&&Array.isArray(t.lines)&&Array.isArray(t.dates)){tickets[g.key].push(t);addedT++}})}
   saveTickets();(data.seen||[]).forEach(k=>seen.add(k));saveSeen();
   const bs=data.settings||{};
-  if(!settings.workerUrl&&bs.workerUrl)settings.workerUrl=bs.workerUrl;
+  // A backup's own Worker wins over the built-in one, but never over one typed in on this phone
+  if((!settings.workerUrl||settings.workerUrl===DEFAULT_WORKER)&&bs.workerUrl)settings.workerUrl=bs.workerUrl;
   for(const k of ['worthIt','freePlan','bonusCounts','avoidLast'])if(bs[k]!=null)settings[k]=bs[k];
   if(state.live.lotto.length||state.live.euromillions.length)settings.demo=false;
   saveSettings();render();
@@ -476,7 +481,7 @@ function viewStory(){
 function renderHeader(){
   const g=G(),ds=draws();let badge;
   if(settings.demo)badge=`<span class="badge demo">✨ SAMPLE DATA — not real results</span>`;
-  else if(!ds.length)badge=`<span class="badge">No results yet — add your worker in Settings</span>`;
+  else if(!ds.length)badge=`<span class="badge">${state.syncing?'Fetching results…':settings.workerUrl?'No results yet':'No results yet — add your worker in Settings'}</span>`;
   else{const t=state.meta[g.key]?.lastSync;badge=`<span class="badge">Live · ${ds.length} draws${t?' · updated '+new Date(t).toLocaleString('en-GB',{weekday:'short',hour:'2-digit',minute:'2-digit'}):''}</span>`}
   const sp=[[8,20,0],[78,14,.8],[90,52,1.6],[55,8,1.2],[30,60,2]].map(([l,t,d])=>`<i class="spark" style="left:${l}%;top:${t}px;animation-delay:${d}s"></i>`).join('');
   $('#hdr').innerHTML=`${sp}<button class="hstory${state.view==='story'?' on':''}" data-view="story" aria-label="The story">📖 Story</button><h1>Bean Machine ✦</h1><div class="sub">Stats for fun — every line has the same chance</div>
@@ -486,10 +491,15 @@ function renderNav(){
   const items=[['latest','🎱','Latest'],['check','🔍','Check'],['gen','🎟️','My lines'],['stats','📊','Stats'],['settings','⚙️','Settings']];
   $('#nav').innerHTML=items.map(([k,i,l])=>`<button data-view="${k}" class="${state.view===k?'on':''}"><span>${i}</span>${l}</button>`).join('');
 }
-function noData(){return `<div class="card"><h2>No results yet</h2><p class="muted">Turn on sample data, or add your worker URL in Settings and tap “Get latest”.</p></div>`}
+function noData(){
+  if(state.syncing)return `${installBanner()}<div class="card"><h2>Fetching results…</h2><p class="muted">Downloading ten years of draws. This takes a few seconds the first time, then only new draws are fetched.</p></div>`;
+  if(!settings.demo&&settings.workerUrl&&state.syncError)return `${installBanner()}<div class="card"><h2>Couldn't fetch results</h2><p class="muted">The results service didn't answer. Check you're online, then try again.</p><button class="btn" data-act="sync">Try again</button></div>`;
+  return `${installBanner()}<div class="card"><h2>No results yet</h2><p class="muted">Turn on sample data, or add your worker URL in Settings and tap “Get latest”.</p></div>`;
+}
 
 function viewLatest(){
   const g=G(),ds=draws();if(!ds.length)return noData();
+  const ib=installBanner();
   const d=ds[0],ls=lastSet(ds),nd=nextDraw(g),jp=settings.demo?d.jackpot:(state.meta[g.key]?.nextJackpot??d.jackpot);
   let jack='';
   if(jp!=null){
@@ -499,7 +509,7 @@ function viewLatest(){
   const anim=state.animKey!==g.key+d.date;state.animKey=g.key+d.date;
   const lk='L'+g.key+d.date,lopen=state.open.has(lk);
   const meta=drawMeta;
-  return `${bannerHTML()}${jack}<div class="card latest${lopen?' open':''}" data-grp="${lk}"><h2>${g.name} · ${fmtDate(d.date)}<span class="chev">▸</span></h2>${[...ls].reverse().map(x=>`${x.round?`<h3>${x.round}</h3>`:''}${rowBalls(g,x.main,x.extra,{fit:'fit-lg',anim})}${settings.demo?'':crowdLine(g,x)}${lopen&&(x.prizes||x.machine||x.ballSet||x.drawNo||(x.src&&x.src!=='api')||settings.demo)?`<div class="pb">${prizeTable(g,x)}${meta(x)}</div>`:''}`).join('')}
+  return `${ib}${bannerHTML()}${jack}<div class="card latest${lopen?' open':''}" data-grp="${lk}"><h2>${g.name} · ${fmtDate(d.date)}<span class="chev">▸</span></h2>${[...ls].reverse().map(x=>`${x.round?`<h3>${x.round}</h3>`:''}${rowBalls(g,x.main,x.extra,{fit:'fit-lg',anim})}${settings.demo?'':crowdLine(g,x)}${lopen&&(x.prizes||x.machine||x.ballSet||x.drawNo||(x.src&&x.src!=='api')||settings.demo)?`<div class="pb">${prizeTable(g,x)}${meta(x)}</div>`:''}`).join('')}
   ${nd?`<div class="note">Next draw: ${nd.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'short'})}</div>`:''}</div>
   <div class="card"><h2>Recent draws</h2>${recentHTML(g,ds)}</div>`;
 }
@@ -911,6 +921,9 @@ document.addEventListener('click',async e=>{
     if(a==='restore'){$('#restoreFile').click();return}
     if(a==='saveurl'){settings.workerUrl=$('#wurl').value.trim();saveSettings();toast('Saved')}
     if(a==='saveworth'){const v=+$('#worth').value;if(v>0){settings.worthIt=v;saveSettings();toast('Saved')}}
+    if(a==='install'&&installPrompt){const p=installPrompt;installPrompt=null;p.prompt();try{await p.userChoice}catch(e){}render();return}
+    if(a==='installhelp'){openInstallHelp();return}
+    if(a==='installlater'){LS.set('installLater',Date.now());render();return}
     if(a==='sync'||a==='syncfull'){settings.workerUrl=$('#wurl')?.value.trim()||settings.workerUrl;saveSettings();toast('Fetching…');await syncAll(a==='syncfull');return}
     if(a==='wipe'){if(!confirm('Clear stored live results? You\'ll need to sync again.'))return;for(const k of Object.keys(GAMES)){state.live[k]=[];await DB.set('draws_'+k,[])}state.meta={};LS.set('meta',{});toast('Cleared')}
   }
@@ -920,6 +933,45 @@ document.addEventListener('change',e=>{
   if(e.target.id==='restoreFile'){const f=e.target.files[0];if(f)importBackup(f);e.target.value='';return}
   const k=e.target.dataset.set;if(!k)return;settings[k]=e.target.checked;saveSettings();
   if(k==='demo'){state.gen=[];if(!settings.demo&&!draws().length)toast('Add your worker URL, then tap “Get latest”')}render()});
+
+
+/* ---------- Installing ----------
+   Android (and desktop Chrome) offer their own install prompt, which we catch and put behind an Install button.
+   iPhones never offer one: the only way is Safari's Share → Add to Home Screen, so we show the steps instead.
+   Same approach as the trip countdown app. */
+let installPrompt=null;
+function iosInstallState(env){
+  const ua=env.userAgent||'';
+  // iPadOS asks for the desktop site and reports itself as a Mac; a touch screen gives it away
+  const ios=/iPhone|iPad|iPod/i.test(ua)||(/Macintosh/i.test(ua)&&(env.maxTouchPoints||0)>1);
+  if(!ios)return 'not-ios';
+  return env.standalone===true||env.displayModeStandalone===true?'installed':'needs-install';
+}
+const iosNeedsInstall=()=>iosInstallState({userAgent:navigator.userAgent,maxTouchPoints:navigator.maxTouchPoints,
+  standalone:navigator.standalone,displayModeStandalone:!!window.matchMedia?.('(display-mode: standalone)').matches})==='needs-install';
+const INSTALL_SNOOZE_DAYS=7;
+const installSnoozed=()=>{const t=+LS.get('installLater',0);return t>0&&Date.now()-t<INSTALL_SNOOZE_DAYS*864e5};
+function installBanner(){
+  if(installSnoozed())return '';
+  if(installPrompt)return `<div class="card install"><div><b>Install Bean Machine</b><div class="small">Adds it to your home screen and app list, and it opens like an app.</div></div><div class="row" style="margin-top:10px"><button class="btn" data-act="install">Install</button><button class="btn ghost" data-act="installlater">Not now</button></div></div>`;
+  if(iosNeedsInstall())return `<div class="card install"><div><b>Add Bean Machine to your Home Screen</b><div class="small">It then opens like an app, full screen, with its own icon.</div></div><div class="row" style="margin-top:10px"><button class="btn" data-act="installhelp">Show me how</button><button class="btn ghost" data-act="installlater">Not now</button></div></div>`;
+  return '';
+}
+const SHARE_ICON='<svg class="share-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M8 7l4-4 4 4M6 11H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-1"/></svg>';
+function openInstallHelp(){
+  let d=$('#dlg-install');
+  if(!d){d=document.createElement('dialog');d.id='dlg-install';d.className='sheet';document.body.appendChild(d)}
+  d.innerHTML=`<form method="dialog"><h2>Install on your iPhone</h2><ol class="install-steps">
+    <li><span class="n">1</span><span>Tap the <b>Share</b> button ${SHARE_ICON} at the bottom of Safari. Can't see it? Tap <b>⋯</b> or the <b>three lines (≡)</b> in the address bar, then <b>Share</b>.</span></li>
+    <li><span class="n">2</span><span>Scroll down and tap <b>Add to Home Screen</b>.</span></li>
+    <li><span class="n">3</span><span>Tap <b>Add</b>, then open <b>Bean Machine</b> from your Home Screen.</span></li></ol>
+    <p class="small muted">Use the Home Screen app from then on. It keeps its own saved lines, separate from Safari, and the iPhone won't clear them the way it can clear websites you haven't visited for a while.</p>
+    <p class="small muted">No Share button? The link may have opened inside another app, such as WhatsApp or Messages. Open it in Safari first.</p>
+    <button class="btn block" style="margin-top:6px">Got it</button></form>`;
+  if(d.showModal)d.showModal();else d.setAttribute('open','');
+}
+window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();installPrompt=e;if(typeof render==='function')render()});
+window.addEventListener('appinstalled',()=>{installPrompt=null;render();toast('Installed ✨')});
 
 /* ---------- Boot ---------- */
 (async()=>{

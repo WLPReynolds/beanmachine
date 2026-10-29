@@ -8,6 +8,10 @@
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Bean Machine">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>
 :root{--bg1:#1a0b3d;--bg2:#3b0f5c;--gold:#f7c948;--gold2:#ffe48a;--ink:#f4efff;--muted:#b9a9d9;--card:rgba(255,255,255,.07);--line:rgba(255,255,255,.13);--good:#3ddc97;--warn:#ffb648;--bad:#ff5d73}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -146,6 +150,15 @@ nav button.on{color:var(--gold2)}nav button.on span{filter:none;opacity:1}
 .toast{position:fixed;left:50%;bottom:100px;transform:translateX(-50%);background:#fff;color:#2a1040;font-weight:700;padding:10px 16px;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.4);z-index:9;opacity:0;transition:opacity .25s;pointer-events:none;max-width:90vw;text-align:center}
 .toast.show{opacity:1}
 .note{font-size:12px;color:var(--muted);margin-top:10px;line-height:1.4}
+.card.install{background:linear-gradient(150deg,rgba(255,228,138,.22),rgba(255,95,168,.18));border-color:rgba(247,201,72,.45)}
+.card.install .row{gap:8px}
+dialog.sheet{border:1px solid var(--line);border-radius:20px;padding:20px;max-width:min(420px,calc(100vw - 32px));background:#2a1250;color:var(--ink);box-shadow:0 20px 60px rgba(0,0,0,.6)}
+dialog.sheet::backdrop{background:rgba(10,4,25,.6)}
+dialog.sheet h2{margin:0 0 14px;font-size:20px}
+.install-steps{list-style:none;margin:0 0 14px;padding:0;display:grid;gap:12px}
+.install-steps li{display:flex;gap:12px;align-items:flex-start;line-height:1.5;font-size:15px}
+.install-steps .n{flex:none;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(135deg,var(--gold2),var(--gold));color:#3a2300;font-weight:900}
+.share-icon{vertical-align:-3px;color:var(--gold)}
 .tie{margin-left:6px;padding:2px 8px;border:1px solid var(--line);border-radius:99px;background:rgba(255,255,255,.06);color:var(--gold);font:inherit;font-size:11px;font-weight:800;letter-spacing:.4px;text-transform:none;cursor:pointer}
 .tied{margin-top:8px;padding-left:10px;border-left:2px solid var(--line)}
 .card h3.dayh{color:var(--gold);font-size:15px;margin-top:18px}
@@ -168,6 +181,6 @@ nav button.on{color:var(--gold2)}nav button.on span{filter:none;opacity:1}
 <main id="view"></main>
 <nav id="nav"></nav>
 <div class="toast" id="toast"></div>
-<script src="src/app.js?v=1.2.5"></script>
+<script src="src/app.js?v=1.2.6"></script>
 </body>
 </html>

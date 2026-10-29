@@ -455,3 +455,62 @@ test('stats shows the new chance cards for main balls, and only the drought card
   app.get("state.statPool='main'; render();");
   assert.equal(app.errors.length, 0, app.errors.map(e => e.message).join('\n'));
 });
+
+/* ---------- First run and installing ---------- */
+test('a fresh install uses the built-in Worker, shows "Fetching" and then the real results', async () => {
+  const a = loadApp({ settings: {} });
+  const urls = [];
+  let release;
+  const gate = new Promise(r => { release = r; });
+  const d = { date: '2026-10-28', round: 'Round 1', main: [2, 4, 21, 26, 30, 38], extra: [51], prizes: null };
+  a.window.fetch = async u => { urls.push(String(u)); await gate; return { ok: true, json: async () => ({ draws: /lotto/.test(u) ? [d] : [], full: true, rev: 'r' }) }; };
+  await new Promise(r => setTimeout(r, 20));
+  assert.equal(a.get('settings.demo'), false);
+  assert.match(urls[0], /^https:\/\/lotto-lab-proxy\.wayne-lee-paul-reynolds\.workers\.dev\/history\?game=lotto$/);
+  assert.match(a.window.document.querySelector('#view').textContent, /Fetching results/);
+  release();
+  await new Promise(r => setTimeout(r, 50));
+  assert.equal(a.get('state.live.lotto.length'), 1);
+  assert.doesNotMatch(a.window.document.querySelector('#view').textContent, /Fetching results/);
+});
+
+test('an existing phone keeps its own settings', () => {
+  const a = loadApp({ settings: { demo: true, workerUrl: 'https://mine.example.workers.dev' } });
+  assert.equal(a.get('settings.workerUrl'), 'https://mine.example.workers.dev');
+  assert.equal(a.get('settings.demo'), true);
+});
+
+test('iosInstallState spots iPhones and iPads, and knows when the app is already installed', () => {
+  const s = fn('iosInstallState');
+  const iphone = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1';
+  const mac = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/18.0 Safari/605.1.15';
+  const pixel = 'Mozilla/5.0 (Linux; Android 15; Pixel 8) AppleWebKit/537.36 Chrome/130.0 Mobile Safari/537.36';
+  assert.equal(s({ userAgent: iphone }), 'needs-install');
+  assert.equal(s({ userAgent: iphone, standalone: true }), 'installed');
+  assert.equal(s({ userAgent: iphone, displayModeStandalone: true }), 'installed');
+  assert.equal(s({ userAgent: mac, maxTouchPoints: 5 }), 'needs-install'); // iPad asking for the desktop site
+  assert.equal(s({ userAgent: mac, maxTouchPoints: 0 }), 'not-ios');
+  assert.equal(s({ userAgent: pixel }), 'not-ios');
+});
+
+test('on Android the Install button uses the browser prompt, and Not now hides it for a week', async () => {
+  const a = loadApp();
+  const w = a.window, doc = w.document;
+  let prompted = 0;
+  const e = new w.Event('beforeinstallprompt');
+  e.prompt = () => { prompted++; };
+  e.userChoice = Promise.resolve({ outcome: 'accepted' });
+  w.dispatchEvent(e);
+  a.get("state.view='latest'; render();");
+  const btn = doc.querySelector('[data-act="install"]');
+  assert.ok(btn, 'Install button shown');
+  btn.click();
+  await new Promise(r => setTimeout(r, 10));
+  assert.equal(prompted, 1);
+  assert.equal(doc.querySelector('[data-act="install"]'), null, 'gone once used');
+  w.dispatchEvent(Object.assign(new w.Event('beforeinstallprompt'), { prompt() {}, userChoice: Promise.resolve({}) }));
+  doc.querySelector('[data-act="installlater"]').click();
+  await new Promise(r => setTimeout(r, 10));
+  assert.equal(doc.querySelector('.card.install'), null, 'snoozed');
+  assert.equal(a.errors.length, 0, a.errors.map(x => x.message).join('\n'));
+});
