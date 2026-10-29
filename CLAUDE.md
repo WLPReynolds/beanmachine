@@ -14,7 +14,9 @@ the `lottolab` IndexedDB, and the Worker `lotto-lab-proxy`. Restore accepts back
 - `manifest.json`, the icons, and `CNAME` (`beanmachine.slightlygood.app`; **keep it**).
 - `test/`: `node:test` + jsdom tests. `helpers.js` loads the app in demo mode.
 - `scripts/bump.js`: bumps the version.
-- The Cloudflare Worker (`lotto-worker.js`) is **not** in this repo. It's deployed by pasting it into the dashboard.
+- The Cloudflare Worker (`lotto-worker.js`) is **not** in this repo. It lives in the private `WLPReynolds/beanmachine-workers` repo and is deployed by pasting it into the dashboard.
+
+**Stats are locked** behind per-tester access codes (the Stats tab shows a code box). The Worker's `/unlock` checks a code against the `stats:XXXX-XXXX` KV entries and ties it to at most two phones; syncs re-check. Latest, Check, My lines and the generator stay free. Tests run with Stats unlocked unless `loadApp({ stats: false })`.
 
 ## Workflow
 - Work on a branch. Run `npm install` once, then `npm test`.

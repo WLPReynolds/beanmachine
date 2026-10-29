@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.2.6';
+const APP_VERSION='1.2.7';
 
 /* ---------- Game definitions ---------- */
 // "since" = first draw of the current format: Lotto went to 59 balls in Oct 2015; EuroMillions to 12 Lucky Stars in Sep 2016.
@@ -110,9 +110,37 @@ async function api(path,costsCall=true){
 const DELTA_DAYS=40;
 function historyQuery(g,full){
   const last=(state.live[g.key]||[])[0]?.date,rev=state.meta[g.key]?.store?.rev;
-  if(full||!last||rev==null)return `/history?game=${g.key}`;
+  // With a Stats code, the Worker also says whether this phone may still see Stats
+  const acc=statsAccess.code?`&code=${encodeURIComponent(statsAccess.code)}&device=${deviceId()}`:'';
+  if(full||!last||rev==null)return `/history?game=${g.key}${acc}`;
   const d=new Date(last+'T12:00:00');d.setDate(d.getDate()-DELTA_DAYS);
-  return `/history?game=${g.key}&since=${iso(d)}&rev=${encodeURIComponent(rev)}`;
+  return `/history?game=${g.key}&since=${iso(d)}&rev=${encodeURIComponent(rev)}${acc}`;
+}
+/* ---------- Stats access ----------
+   Stats are locked until a tester enters their code. The Worker ties each code to at most two phones and,
+   at each sync, says whether this phone is still allowed (so a code removed in Cloudflare locks again).
+   Not real security (the code is public), just a stop on casual sharing. */
+const statsAccess=Object.assign({code:'',ok:false},LS.get('statsAccess',{}));
+const saveStatsAccess=()=>LS.set('statsAccess',statsAccess);
+function deviceId(){
+  let id=LS.get('deviceId','');
+  if(!/^[A-Za-z0-9_-]{16,64}$/.test(id)){id=[...crypto.getRandomValues(new Uint8Array(16))].map(b=>b.toString(16).padStart(2,'0')).join('');LS.set('deviceId',id)}
+  return id;
+}
+const statsUnlocked=()=>statsAccess.ok===true;
+async function unlockStats(code){
+  code=String(code||'').trim().toUpperCase();
+  if(!code){toast('Type your code first');return}
+  if(!settings.workerUrl){toast('No results service set up');return}
+  let r;
+  try{r=await api(`/unlock?code=${encodeURIComponent(code)}&device=${deviceId()}`,false)}
+  catch(e){toast("Couldn't check the code. Are you online?");return}
+  if(r.ok){statsAccess.code=code;statsAccess.ok=true;saveStatsAccess();toast('Stats unlocked ✨');render();return}
+  toast(r.reason==='full'?'That code is already in use on other phones':'That code isn\'t recognised');
+}
+function lockedStats(){
+  return `<div class="card locked"><h2>🔒 Stats</h2><p>Ten years of draws, put to the test: is it random, hot and cold numbers, draw days, “overdue” numbers, crowd watch and more.</p><p class="small muted">Stats are for invited testers for now. If you've been given a code, enter it here.</p>
+  <div class="row" style="gap:8px;margin-top:6px;flex-wrap:nowrap"><input type="text" id="statscode" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX" style="flex:1;min-width:0;width:auto;text-transform:uppercase;letter-spacing:1px;font-size:16px"><button class="btn" data-act="unlockstats">Unlock</button></div></div>`;
 }
 async function syncGame(g,full){
   // Preferred: the Worker's stored history (built up by its schedule). Costs no API calls.
@@ -122,6 +150,7 @@ async function syncGame(g,full){
     (r.draws||[]).forEach(d=>{if(valid(g,d))map.set(dKey(d),d)});
     state.live[g.key]=sortDraws([...map.values()]);
     await DB.set('draws_'+g.key,state.live[g.key]);
+    if(typeof r.stats==='boolean'&&statsAccess.code&&r.stats!==statsAccess.ok){statsAccess.ok=r.stats;saveStatsAccess()}
     state.meta[g.key]={lastSync:Date.now(),nextJackpot:r.nextJackpot??state.meta[g.key]?.nextJackpot??null,store:{updatedAt:r.updatedAt,lastRun:r.lastRun,count:r.apiCount??(r.draws||[]).length,imported:r.imported||null,rev:r.rev??null}};
     LS.set('meta',state.meta);return;
   }catch(e){
@@ -791,6 +820,7 @@ function gapNote(g,ds){
   return `<div class="note" style="color:var(--warn)">${m.n} draw date${m.n===1?' is':'s are'} missing from this window (${big.join('; ')}${m.runs.length>2?'; and others':''}). Counts are from the draws that are here, and “draws ago” skips the gap.</div>`;
 }
 function viewStats(){
+  if(!statsUnlocked())return lockedStats();
   const g=G(),all=draws();if(!all.length)return noData();
   const wins={all:all.length,'100':100,'26':26},ds=all.slice(0,Math.min(all.length,wins[state.statWin]));
   const pool=g.sepPool?state.statPool:'main',N=pool==='extra'?g.extraMax:g.mainMax,k=pool==='extra'?g.extra:g.main,n=ds.length;
@@ -875,6 +905,7 @@ function render(){
 }
 
 /* ---------- Events ---------- */
+document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.id==='statscode'){e.preventDefault();unlockStats(e.target.value)}});
 document.addEventListener('click',async e=>{
   const t=e.target.closest('[data-game],[data-view],[data-pick],[data-act],[data-lines],[data-win],[data-pool],[data-sort],[data-grp]');if(!t)return;
   if(t.dataset.grp){const k=t.dataset.grp;state.open.has(k)?state.open.delete(k):state.open.add(k);const y=scrollY;render();scrollTo(0,y);return}
@@ -923,6 +954,7 @@ document.addEventListener('click',async e=>{
     if(a==='saveworth'){const v=+$('#worth').value;if(v>0){settings.worthIt=v;saveSettings();toast('Saved')}}
     if(a==='install'&&installPrompt){const p=installPrompt;installPrompt=null;p.prompt();try{await p.userChoice}catch(e){}render();return}
     if(a==='installhelp'){openInstallHelp();return}
+    if(a==='unlockstats'){await unlockStats($('#statscode')?.value);return}
     if(a==='installlater'){LS.set('installLater',Date.now());render();return}
     if(a==='sync'||a==='syncfull'){settings.workerUrl=$('#wurl')?.value.trim()||settings.workerUrl;saveSettings();toast('Fetching…');await syncAll(a==='syncfull');return}
     if(a==='wipe'){if(!confirm('Clear stored live results? You\'ll need to sync again.'))return;for(const k of Object.keys(GAMES)){state.live[k]=[];await DB.set('draws_'+k,[])}state.meta={};LS.set('meta',{});toast('Cleared')}

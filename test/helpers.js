@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { JSDOM, VirtualConsole } = require('jsdom');
 
-function loadApp({ settings } = {}) {
+function loadApp({ settings, stats = true } = {}) {
   const root = path.join(__dirname, '..');
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8').replace(/<script src="src\/app\.js[^"]*"><\/script>/, '');
   const js = fs.readFileSync(path.join(root, 'src/app.js'), 'utf8');
@@ -20,6 +20,8 @@ function loadApp({ settings } = {}) {
   w.cancelAnimationFrame = () => {};
   // Tests run in sample mode with no Worker unless they say otherwise (the app's own default is the real Worker)
   w.localStorage.setItem('ll_settings', JSON.stringify(settings ?? { demo: true, workerUrl: '' }));
+  // Stats are unlocked unless a test is about the lock itself
+  if (stats) w.localStorage.setItem('ll_statsAccess', JSON.stringify({ code: '', ok: true }));
   // A real classic <script>, as in the browser, so top-level const/function bindings are global
   const el = w.document.createElement('script');
   el.textContent = js;
