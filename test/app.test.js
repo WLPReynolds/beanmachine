@@ -381,3 +381,34 @@ test('build-import reads lotto.net draws and tags them by source', () => {
   assert.match(fn('drawMeta')({ src: 'lotto-net' }), /Imported from lotto\.net/);
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+/* ---------- Delta sync with the Worker ---------- */
+test('sync asks for the full history first, then only recent draws, and keeps what it already has', async () => {
+  const a = loadApp({ settings: { demo: false, workerUrl: 'https://w.test' } });
+  const urls = [];
+  const d = (date, main) => ({ date, round: null, main, extra: [1, 2], prizes: null });
+  const full = [d('2026-10-27', [1, 2, 3, 4, 5]), d('2016-09-27', [6, 7, 8, 9, 10])];
+  let reply = { draws: full, full: true, rev: 'r1', apiCount: 1 };
+  a.window.fetch = async u => { urls.push(String(u)); return { ok: true, json: async () => JSON.parse(JSON.stringify(reply)) }; };
+  const em = a.get('GAMES.euromillions');
+  await new Promise(r => setTimeout(r, 50)); // let the app's own sync on start-up finish
+  a.get("state.live.euromillions=[]; state.meta={}");
+  urls.length = 0;
+  const last = async (...args) => { const n = urls.length; await a.window.syncGame(em, ...args); return urls.slice(n).filter(u => /euromillions/.test(u)).pop(); };
+  assert.equal(await last(), 'https://w.test/history?game=euromillions');
+  assert.equal(a.get('state.live.euromillions.length'), 2);
+  // Second sync: only draws from 40 days before the newest one held, with the import revision
+  reply = { draws: [d('2026-10-30', [11, 12, 13, 14, 15])], full: false, rev: 'r1', apiCount: 2 };
+  assert.equal(await last(), 'https://w.test/history?game=euromillions&since=2026-09-17&rev=r1');
+  assert.deepEqual([...a.get('state.live.euromillions.map(d=>d.date)')], ['2026-10-30', '2026-10-27', '2016-09-27']);
+  // "Sync all history" (full) ignores the delta
+  assert.equal(await last(true), 'https://w.test/history?game=euromillions');
+});
+
+test('historyQuery stays full for an older Worker that sends no import revision', () => {
+  const a = loadApp({ settings: { demo: false, workerUrl: 'https://w.test' } });
+  a.get("state.live.lotto=[{date:'2026-10-28',main:[1,2,3,4,5,6],extra:[7]}]; state.meta={lotto:{store:{count:1}}}");
+  assert.equal(a.get('historyQuery(GAMES.lotto)'), '/history?game=lotto');
+  a.get("state.meta.lotto.store.rev=''");
+  assert.equal(a.get('historyQuery(GAMES.lotto)'), '/history?game=lotto&since=2026-09-18&rev=');
+});

@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.2.3';
+const APP_VERSION='1.2.4';
 
 /* ---------- Game definitions ---------- */
 // "since" = first draw of the current format: Lotto went to 59 balls in Oct 2015; EuroMillions to 12 Lucky Stars in Sep 2016.
@@ -101,15 +101,25 @@ async function api(path,costsCall=true){
   if(j.remaining!=null){state.meta.remaining={n:j.remaining,limit:j.limit,at:j.rateAt?Date.parse(j.rateAt):Date.now()};LS.set('meta',state.meta)}
   if(!r.ok)throw new Error(j.error||('HTTP '+r.status));return j;
 }
+// Delta sync: once the phone holds a game's history, ask only for draws from 40 days before the newest one it has.
+// That window covers late prize breakdowns and jackpot corrections (the API's free plan only reaches back about a
+// month). `rev` is the import revision the phone last saw; if the Worker's import has changed it sends everything.
+const DELTA_DAYS=40;
+function historyQuery(g,full){
+  const last=(state.live[g.key]||[])[0]?.date,rev=state.meta[g.key]?.store?.rev;
+  if(full||!last||rev==null)return `/history?game=${g.key}`;
+  const d=new Date(last+'T12:00:00');d.setDate(d.getDate()-DELTA_DAYS);
+  return `/history?game=${g.key}&since=${iso(d)}&rev=${encodeURIComponent(rev)}`;
+}
 async function syncGame(g,full){
   // Preferred: the Worker's stored history (built up by its schedule). Costs no API calls.
   try{
-    const r=await api(`/history?game=${g.key}`,false);
+    const r=await api(historyQuery(g,full),false);
     const map=new Map(state.live[g.key].map(d=>[dKey(d),d]));
     (r.draws||[]).forEach(d=>{if(valid(g,d))map.set(dKey(d),d)});
     state.live[g.key]=sortDraws([...map.values()]);
     await DB.set('draws_'+g.key,state.live[g.key]);
-    state.meta[g.key]={lastSync:Date.now(),nextJackpot:r.nextJackpot??state.meta[g.key]?.nextJackpot??null,store:{updatedAt:r.updatedAt,lastRun:r.lastRun,count:r.apiCount??(r.draws||[]).length,imported:r.imported||null}};
+    state.meta[g.key]={lastSync:Date.now(),nextJackpot:r.nextJackpot??state.meta[g.key]?.nextJackpot??null,store:{updatedAt:r.updatedAt,lastRun:r.lastRun,count:r.apiCount??(r.draws||[]).length,imported:r.imported||null,rev:r.rev??null}};
     LS.set('meta',state.meta);return;
   }catch(e){
     // Older Worker (no /history) or KV not set up: fall back to asking the API directly
