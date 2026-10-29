@@ -307,3 +307,65 @@ test('stats page shows the draw-day card, a line\'s worth of balls and a working
   }
   assert.equal(app.errors.length, 0, app.errors.map(e => e.message).join('\n'));
 });
+
+/* ---------- Imported history ---------- */
+test('drawMeta labels imported draws by source and leaves API draws alone', () => {
+  const drawMeta = fn('drawMeta');
+  assert.equal(drawMeta({ src: 'api' }), '');
+  assert.equal(drawMeta({}), '');
+  assert.match(drawMeta({ src: 'lottometrics' }), /Imported from lottometrics\.app/);
+  assert.match(drawMeta({ src: 'national-lottery', machine: 'Lotto5', ballSet: 'L1', drawNo: 3219 }), /Machine Lotto5 · Ball set L1 · Draw 3219 · Imported from the official results download/);
+});
+
+test('missingRuns finds draw days with no draw, grouped into runs', () => {
+  const missingRuns = fn('missingRuns');
+  // Lotto: Wed/Sat. 3 Jan 2026 (Sat) and 7 Jan (Wed) missing between 31 Dec 2025 and 10 Jan 2026
+  const ds = [{ date: '2026-01-10' }, { date: '2025-12-31' }];
+  const m = missingRuns(L(), ds);
+  assert.equal(m.n, 2);
+  assert.deepEqual(JSON.parse(JSON.stringify(m.runs)), [{ from: '2026-01-03', to: '2026-01-07', n: 2 }]);
+  assert.equal(missingRuns(L(), [{ date: '2026-01-07' }, { date: '2026-01-03' }]).n, 0);
+});
+
+test('importNote reports sources, agreement and disagreement with the API', () => {
+  const importNote = fn('importNote');
+  assert.equal(importNote(null), '');
+  const ok = importNote({ count: 1158, overlap: 4, mismatches: [], sources: { lottometrics: { kept: 1065, from: '2015-10-10', to: '2025-12-31' } } });
+  assert.match(ok, /1,158 imported: lottometrics\.app 1065 \(2015–2025\)\. 4 overlap with the API and agree\./);
+  const bad = importNote({ count: 10, overlap: 2, mismatches: [{ date: '2026-10-24', round: 'Round 1' }], sources: {} });
+  assert.match(bad, /1 disagree with the API \(2026-10-24 R1\) — the API's numbers are used\./);
+});
+
+/* ---------- scripts/build-import.js ---------- */
+test('build-import fixes lottometrics dates, keeps the current format, prefers official data and flags mismatches', () => {
+  const fs = require('fs'), os = require('os'), path = require('path'), { execFileSync } = require('child_process');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bm-import-'));
+  const w = (f, s) => { fs.writeFileSync(path.join(dir, f), s); return path.join(dir, f); };
+  const lm = w('lm.json', JSON.stringify([
+    { draw_date: '2014-01-03', main_numbers: '1,2,3,4,5,6', extra_numbers: '7', draw_session: null }, // old 49-ball era: dropped
+    { draw_date: '2025-12-30', main_numbers: '20,3,27,29,38,46', extra_numbers: '14', draw_session: null }, // really Wed 31 Dec
+  ]));
+  const em = w('em.json', JSON.stringify([
+    { draw_date: '2025-12-29', main_numbers: '11,26,29,34,44', extra_numbers: '1,10', draw_session: null }, // really Tue 30 Dec
+  ]));
+  const api = w('api.json', JSON.stringify([
+    { date: '2026-05-05', numbers: ['3', '4', '8', '20', '31'], stars: ['6', '8'], prizes: [{ matched_numbers: 2, matched_stars: 0, prize: 4, winners: 9 }] },
+    { date: '2026-05-08', numbers: ['1', '2', '3', '4', '5'], stars: ['1', '2'], prizes: [] },
+  ]));
+  const nl = w('nl.csv', 'DrawDate,Ball 1,Ball 2,Ball 3,Ball 4,Ball 5,Lucky Star 1,Lucky Star 2,UK Millionaire Maker,European Millionaire Maker,Ball Set,Machine,DrawNumber\n' +
+    '05-May-2026,3,4,8,20,31,6,8,"XFMK92312",,21,13,1943\n08-May-2026,2,17,19,34,37,8,11,"XGMH78937",,21,13,1944\n');
+  execFileSync(process.execPath, [path.join(__dirname, '..', 'scripts', 'build-import.js'), '--out', dir,
+    '--lottometrics-lotto', lm, '--lottometrics-em', em, '--emapi-em', api, '--nl-em', nl], { stdio: 'pipe' });
+  const lotto = JSON.parse(fs.readFileSync(path.join(dir, 'imported-lotto.json'), 'utf8'));
+  assert.deepEqual(lotto.draws.map(d => d.date), ['2025-12-31']);
+  assert.deepEqual(lotto.draws[0].main, [3, 20, 27, 29, 38, 46]);
+  assert.equal(lotto.draws[0].src, 'lottometrics');
+  const e = JSON.parse(fs.readFileSync(path.join(dir, 'imported-euromillions.json'), 'utf8'));
+  assert.deepEqual(e.draws.map(d => [d.date, d.src]), [['2026-05-08', 'national-lottery'], ['2026-05-05', 'national-lottery'], ['2025-12-30', 'lottometrics']]);
+  assert.deepEqual(e.draws[1].euPrizes, [{ t: '2+0', w: 9, p: 4 }]); // carried over from the lower-priority source
+  assert.deepEqual(e.draws[1].mm, ['XFMK92312']);
+  assert.equal(e.checks.overlap, 2);
+  assert.deepEqual(e.checks.mismatches.map(m => m.date), ['2026-05-08']);
+  assert.ok(e.gaps.includes('2026-01-02'));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
