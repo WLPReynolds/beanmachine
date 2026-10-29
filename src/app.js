@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.2.0';
+const APP_VERSION='1.2.1';
 
 /* ---------- Game definitions ---------- */
 // "since" = first draw of the current format: Lotto went to 59 balls in Oct 2015; EuroMillions to 12 Lucky Stars in Sep 2016.
@@ -613,6 +613,70 @@ function viewGen(embedded){
   return h;
 }
 
+/* ---------- Most / least drawn, with ties shown honestly ---------- */
+// Top `size` numbers by count (dir 1 = most, -1 = least). Numbers level with the last one shown are
+// returned as `tied`, so the cut-off never silently picks between equals.
+function rankTies(nums,cnt,size,dir){
+  const s=[...nums].sort((a,b)=>dir*(cnt[b]-cnt[a])||a-b);
+  if(s.length<=size)return{shown:s,tied:[]};
+  const cut=cnt[s[size-1]];
+  return{shown:s.slice(0,size),tied:s.slice(size).filter(x=>cnt[x]===cut),cut};
+}
+// One "Most drawn" / "Least drawn" block. `key` identifies its tie expander in state.open.
+function rankBlock(g,title,r,cnt,star,key){
+  const balls=xs=>star?`<div class="balls">${xs.map(x=>ball(x,g,{star:true,sm:true})).join('')}</div>`:lineBalls(g,xs,[],{sm:true});
+  const open=state.open.has(key);
+  const tie=r.tied.length?` <button class="tie" data-grp="${key}" aria-expanded="${open}">+${r.tied.length} tied ${open?'▴':'▾'}</button>`:'';
+  return `<h3>${title}${tie}</h3>${balls(r.shown)}<div class="note">${r.shown.map(x=>`${x}: ${cnt[x]}`).join(' · ')}</div>`+
+    (open&&r.tied.length?`<div class="tied">${balls(r.tied)}<div class="note">Also drawn ${r.cut} time${r.cut===1?'':'s'}: ${r.tied.join(', ')}</div></div>`:'');
+}
+const DAY_NAMES=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const STAT_DAYS={lotto:[6,3],euromillions:[2,5]}; // Saturday then Wednesday; Tuesday then Friday
+const weekday=d=>new Date(d.date+'T12:00:00').getDay();
+// Do the two draw days differ by more than chance? A 2×N chi-square of counts per number per day.
+// The (N-1)/(N-k) factor allows for balls being drawn without replacement, as in "Is it random?".
+function dayChi(a,b,N,k){
+  const ta=a.reduce((s,v)=>s+v,0),tb=b.reduce((s,v)=>s+v,0),T=ta+tb;
+  if(!ta||!tb)return null;
+  let x2=0;
+  for(let x=1;x<=N;x++){const c=a[x]+b[x];if(!c)continue;const ea=ta*c/T,eb=tb*c/T;x2+=(a[x]-ea)**2/ea+(b[x]-eb)**2/eb}
+  x2*=(N-1)/(N-k);
+  return{x2,df:N-1,p:chiP(x2,N-1),minExp:Math.min(ta,tb)/N};
+}
+function chiLine(r,label,names){
+  if(!r)return '';
+  const few=r.minExp<5;
+  const pill=few?`<span class="pill p-med">Too few draws yet</span>`:`<span class="pill ${r.p>.05?'p-low':r.p>.01?'p-med':'p-high'}">${r.p>.05?'No real difference':r.p>.01?'Slightly unusual':'Unusual difference'}</span>`;
+  return `<div class="row" style="justify-content:space-between;margin-top:8px"><span class="small">${label} ${pill}</span><span class="muted small">χ² ${r.x2.toFixed(1)} · df ${r.df} · p ${r.p<.001?'<0.001':r.p.toFixed(3)}</span></div>`+
+    (few?`<div class="note">About ${r.minExp.toFixed(1)} per ${label==='Stars'?'star':'number'} on the quieter day so far. The test needs about 5 before its answer means much.</div>`:'');
+}
+function dayCard(g,ds){
+  const days=STAT_DAYS[g.key],withBonus=!g.sepPool&&settings.bonusCounts;
+  const nums=n=>[...Array(n).keys()].map(i=>i+1);
+  const per=days.map(day=>{
+    const dd=ds.filter(d=>weekday(d)===day),m=Array(g.mainMax+1).fill(0),s=Array(g.extraMax+1).fill(0);
+    dd.forEach(d=>{d.main.forEach(x=>m[x]++);if(withBonus)(d.extra||[]).forEach(x=>m[x]++);if(g.sepPool)(d.extra||[]).forEach(x=>s[x]++)});
+    return{day,n:dd.length,dates:new Set(dd.map(d=>d.date)).size,m,s};
+  });
+  let h=`<div class="card"><h2>📅 By draw day</h2><p class="small muted" style="margin-top:0">The most and least drawn ${g.sepPool?'numbers and stars':'balls'} on each draw day${g.sepPool?'':`, counting both rounds${withBonus?' and the bonus ball (Settings)':''}`}. The day can't change which balls come out, so expect any differences to be chance.</p>`;
+  per.forEach(p=>{
+    const nm=DAY_NAMES[p.day],key=`day:${g.key}:${p.day}`;
+    h+=`<h3 class="dayh">${nm}</h3><div class="note" style="margin-top:0">${p.n} draw${p.n===1?'':'s'}${p.dates!==p.n?` on ${p.dates} date${p.dates===1?'':'s'}`:''}</div>`;
+    if(!p.n){h+=`<p class="small muted">No ${nm} draws in this window yet.</p>`;return}
+    h+=rankBlock(g,'Most drawn',rankTies(nums(g.mainMax),p.m,g.main,1),p.m,false,key+':hot');
+    h+=rankBlock(g,'Least drawn',rankTies(nums(g.mainMax),p.m,g.main,-1),p.m,false,key+':cold');
+    if(g.sepPool){
+      h+=rankBlock(g,'Most drawn stars',rankTies(nums(g.extraMax),p.s,g.extra,1),p.s,true,key+':shot');
+      h+=rankBlock(g,'Least drawn stars',rankTies(nums(g.extraMax),p.s,g.extra,-1),p.s,true,key+':scold');
+    }
+  });
+  const [a,b]=per;
+  h+=`<h3>${DAY_NAMES[a.day]} vs ${DAY_NAMES[b.day]}</h3>`;
+  h+=chiLine(dayChi(a.m,b.m,g.mainMax,g.main+(withBonus?1:0)),g.sepPool?'Numbers':'Balls');
+  if(g.sepPool)h+=chiLine(dayChi(a.s,b.s,g.extraMax,g.extra),'Stars');
+  return h+`<div class="note">A fun look back — none of this changes the next draw.</div></div>`;
+}
+
 function viewStats(){
   const g=G(),all=draws();if(!all.length)return noData();
   const wins={all:all.length,'100':100,'26':26},ds=all.slice(0,Math.min(all.length,wins[state.statWin]));
@@ -625,18 +689,25 @@ function viewStats(){
   const isStar=pool==='extra';
   const exp=n*k/N;
   let x2=0;nums.forEach(x=>x2+=(cnt[x]-exp)**2/exp);x2*=(N-1)/(N-k);const df=N-1,pv=chiP(x2,df);
-  const hot=[...nums].sort((a,b)=>cnt[b]-cnt[a]).slice(0,5),cold=[...nums].sort((a,b)=>cnt[a]-cnt[b]).slice(0,5);
-  const absent=[...nums].sort((a,b)=>(since[b]??1e9)-(since[a]??1e9)).slice(0,5);
+  const absent=[...nums].sort((a,b)=>(since[b]??1e9)-(since[a]??1e9)).slice(0,isStar?5:g.main);
   let h=`<div class="card"><div class="chips">${[['all','All '+all.length],['100','Last 100'],['26','Last 26']].map(([v,l])=>`<button class="chip ${state.statWin===v?'on':''}" data-win="${v}">${l}</button>`).join('')}</div>
   ${g.sepPool?`<div class="chips" style="margin-top:8px">${[['main','Main balls'],['extra','Lucky Stars']].map(([v,l])=>`<button class="chip ${pool===v?'on':''}" data-pool="${v}">${l}</button>`).join('')}</div>`:''}
   <div class="note">${n} draws${state.statWin==='all'?' since '+fmtDate(g.since)+' (current format)':''}. Expected per ${isStar?'star':'number'}: ${exp.toFixed(1)}.</div></div>`;
   if(!isStar&&!settings.demo)h+=crowdCard(g,ds);
   h+=`<div class="card"><h2>Is it random?</h2><div class="row" style="justify-content:space-between"><span class="pill ${pv>.05?'p-low':pv>.01?'p-med':'p-high'}">${pv>.05?'Looks random':pv>.01?'Slightly unusual':'Unusual spread'}</span><span class="muted small">χ² ${x2.toFixed(1)} · df ${df} · p ${pv<.001?'<0.001':pv.toFixed(3)}</span></div>
   <p class="small" style="margin-bottom:0">${pv>.05?`The ups and downs between numbers are about what pure chance produces. “Hot” and “cold” numbers are just noise.`:`The spread is a bit lumpier than chance usually gives. With small windows that happens now and then — it isn't a signal to bet on.`}</p></div>`;
-  h+=`<div class="card"><h2>Hot & cold</h2><h3>Most drawn</h3>${lineBalls(g,isStar?[]:hot,[],{sm:true})}${isStar?`<div class="balls">${hot.map(x=>ball(x,g,{star:true,sm:true})).join('')}</div>`:''}<div class="note">${hot.map(x=>`${x}: ${cnt[x]}`).join(' · ')}</div>
-  <h3>Least drawn</h3>${isStar?`<div class="balls">${cold.map(x=>ball(x,g,{star:true,sm:true})).join('')}</div>`:lineBalls(g,cold,[],{sm:true})}<div class="note">${cold.map(x=>`${x}: ${cnt[x]}`).join(' · ')}</div>
+  // One line's worth: 6 for Lotto, 5 main numbers and 2 stars for EuroMillions
+  const size=isStar?g.extra:g.main,hk=`hc:${g.key}:${pool}`;
+  let stars='';
+  if(g.sepPool&&!isStar){
+    const sc=Array(g.extraMax+1).fill(0),sn=[...Array(g.extraMax).keys()].map(i=>i+1);
+    ds.forEach(d=>(d.extra||[]).forEach(x=>sc[x]++));
+    stars=`<h3 class="dayh">Lucky Stars</h3>`+rankBlock(g,'Most drawn',rankTies(sn,sc,g.extra,1),sc,true,hk+':shot')+rankBlock(g,'Least drawn',rankTies(sn,sc,g.extra,-1),sc,true,hk+':scold');
+  }
+  h+=`<div class="card"><h2>Hot & cold</h2>${g.sepPool&&!isStar?`<h3 class="dayh">Main numbers</h3>`:''}${rankBlock(g,'Most drawn',rankTies(nums,cnt,size,1),cnt,isStar,hk+':hot')}${rankBlock(g,'Least drawn',rankTies(nums,cnt,size,-1),cnt,isStar,hk+':cold')}${stars}
   <h3>Longest absent</h3>${isStar?`<div class="balls">${absent.map(x=>ball(x,g,{star:true,sm:true})).join('')}</div>`:lineBalls(g,absent,[],{sm:true})}<div class="note">${absent.map(x=>`${x}: ${since[x]??'—'} draws ago`).join(' · ')}</div>
   <div class="note">A fun look back — none of this changes the next draw.</div></div>`;
+  h+=dayCard(g,ds);
   h+=`<div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Every ${isStar?'star':'number'}</h2><div class="chips">${[['num','1→'+N],['freq','By count']].map(([v,l])=>`<button class="chip ${state.statSort===v?'on':''}" data-sort="${v}">${l}</button>`).join('')}</div></div>
   <div class="fgrid" style="margin-top:12px">${order.map(x=>`<div class="fcell">${isStar?ball(x,g,{star:true,sm:true}):ball(x,g,{sm:true})}<span>${cnt[x]}</span><div class="fbar"><i style="width:${mx===mn?50:((cnt[x]-mn)/(mx-mn)*100)}%"></i></div></div>`).join('')}</div></div>`;
   if(!isStar){

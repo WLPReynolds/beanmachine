@@ -262,3 +262,48 @@ test('reduced motion draws a finished pile instead of animating', () => {
   assert.ok(n > 20, `static pile drawn (${n})`);
   assert.equal(a.get('bm.live.length'), 0);
 });
+
+/* ---------- Most/least drawn with ties, and the draw-day card ---------- */
+test('rankTies keeps one line\'s worth and returns the numbers level at the cut-off', () => {
+  const rankTies = fn('rankTies');
+  const cnt = [0, 5, 4, 4, 4, 1, 0]; // numbers 1..6
+  const nums = [1, 2, 3, 4, 5, 6];
+  const hot = rankTies(nums, cnt, 2, 1);
+  assert.deepEqual([...hot.shown], [1, 2]);
+  assert.deepEqual([...hot.tied], [3, 4]); // level with 2 on 4 draws
+  assert.equal(hot.cut, 4);
+  const cold = rankTies(nums, cnt, 2, -1);
+  assert.deepEqual([...cold.shown], [6, 5]);
+  assert.deepEqual([...cold.tied], []);
+});
+
+test('dayChi is zero for identical days and grows when they differ', () => {
+  const dayChi = fn('dayChi');
+  const a = [0, 10, 10, 10, 10], b = [0, 10, 10, 10, 10];
+  assert.equal(dayChi(a, b, 4, 1).x2, 0);
+  const c = [0, 20, 0, 20, 0], d = [0, 0, 20, 0, 20];
+  assert.ok(dayChi(c, d, 4, 1).p < 0.001);
+  assert.equal(dayChi([0, 0, 0], [0, 1, 1], 2, 1), null); // a day with no draws
+});
+
+test('stats page shows the draw-day card, a line\'s worth of balls and a working tie expander', () => {
+  const w = app.window, doc = w.document;
+  for (const [game, days, size] of [['lotto', ['Saturday', 'Wednesday'], 6], ['euromillions', ['Tuesday', 'Friday'], 5]]) {
+    app.get(`state.game='${game}'; state.view='stats'; state.statPool='main'; state.open.clear(); render();`);
+    const html = doc.querySelector('#view').innerHTML;
+    assert.match(html, /By draw day/);
+    for (const d of days) assert.match(html, new RegExp(`<h3 class="dayh">${d}</h3>`));
+    // First "Most drawn" block is Hot & cold: exactly one line's worth of balls
+    const first = [...doc.querySelectorAll('#view .card h3')].find(h => /Most drawn/.test(h.textContent));
+    assert.equal(first.nextElementSibling.querySelectorAll('.ball').length, size);
+    if (game === 'euromillions') assert.match(html, /Lucky Stars/);
+    const tie = doc.querySelector('#view .tie');
+    if (tie) {
+      tie.click();
+      assert.ok(doc.querySelector('#view .tied'), 'tied balls shown after tapping');
+      doc.querySelector('#view .tie').click();
+      assert.equal(doc.querySelector('#view .tied'), null, 'and hidden again');
+    }
+  }
+  assert.equal(app.errors.length, 0, app.errors.map(e => e.message).join('\n'));
+});
