@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.2.9';
+const APP_VERSION='1.2.10';
 
 /* ---------- Game definitions ---------- */
 // "since" = first draw of the current format: Lotto went to 59 balls in Oct 2015; EuroMillions to 12 Lucky Stars in Sep 2016.
@@ -589,6 +589,126 @@ function pickerGrid(g,pool){
   for(let n=1;n<=max;n++)h+=pool==='extra'?ball(n,g,{star:true,cls:sel.has(n)?'':'off',attr:`data-pick="extra" data-n="${n}"`}):ball(n,g,{cls:sel.has(n)?'':'off',attr:`data-pick="main" data-n="${n}"`});
   return `<div class="grid">${h}</div>`;
 }
+/* ---------- Play it for years: a fast, fair simulator on Check ---------- */
+// One line played every draw for years. A £2 Lotto line enters both rounds; EuroMillions is £2.50 a line.
+const SIM_PRICE={lotto:2,euromillions:2.5},SIM_ROUNDS={lotto:2,euromillions:1},SIM_PER_YEAR=104;
+const SIM_YEARS=[1,2,5,10,20,50,100,200,500,1000,2000,5000,10000,20000,50000,100000,200000,500000,1000000];
+// Rough EuroMillions lower-tier prizes, only used until stored results have prize breakdowns
+const SIM_EM_ROUGH={'5+1':150000,'5+0':20000,'4+2':900,'4+1':85,'4+0':35,'3+2':45,'3+1':8,'3+0':9,'2+2':11,'2+1':4.5,'2+0':3,'1+2':6.5};
+const SIM_TIERS={lotto:[['6+0','6 (jackpot)'],['5+1','5 + bonus'],['5+0','5'],['4+0','4'],['3+0','3'],['2+0','2']],
+  euromillions:[...EM_WIN].map(k=>[k,k==='5+2'?'5 + 2★ (jackpot)':k.replace('+',' + ')+'★'])};
+const median=a=>{if(!a.length)return null;const b=[...a].sort((x,y)=>x-y),m=b.length>>1;return b.length%2?b[m]:(b[m-1]+b[m])/2};
+// Prize per tier: Lotto's fixed prizes; EuroMillions' typical (median) prize from stored breakdowns. Jackpot = typical stored jackpot.
+function simPrizes(g,ds){
+  const jk=g.sepPool?'5+2':'6+0',out={},jacks=ds.map(d=>d.jackpot).filter(v=>v>0);
+  out[jk]=median(jacks)||(g.sepPool?17e6:2e6);
+  let rough=false;
+  for(const [k] of SIM_TIERS[g.key]){if(k===jk)continue;
+    if(!g.sepPool){out[k]=LOTTO_FIXED[k];continue}
+    const v=median(ds.filter(d=>d.prizes).map(d=>prizeFor(g,d,k)).filter(x=>x&&x.known&&x.amount>0).map(x=>x.amount));
+    if(v==null)rough=true;out[k]=v??SIM_EM_ROUGH[k];
+  }
+  return{p:out,rough,jk};
+}
+// Fair random numbers from the phone's secure generator, fetched in batches
+const simRng=(()=>{const buf=new Uint32Array(4096);let i=4096;return()=>{if(i===4096){crypto.getRandomValues(buf);i=0}return buf[i++]/4294967296}})();
+function simPick(k,N,mark,tick,out,from=0){let c=0;while(c<k){const x=1+(simRng()*N|0);if(mark[x]!==tick){mark[x]=tick;out[from+c++]=x}}}
+let sim=null;
+const simKey=(g,main,extra)=>g.key+':'+main.join(',')+'|'+extra.join(',');
+function simNew(g,main,extra,ds){
+  const line=new Uint8Array(g.mainMax+1),lx=new Uint8Array((g.extraMax||0)+1);main.forEach(x=>line[x]=1);extra.forEach(x=>lx[x]=1);
+  const pr=simPrizes(g,ds);
+  return{key:simKey(g,main,extra),game:g.key,main,extra,line,lx,n:0,rounds:0,counts:{},won:0,hit:null,done:false,running:false,
+    mark:new Int32Array(g.mainMax+1),xmark:new Int32Array((g.extraMax||0)+1),tick:0,last:null,prizes:pr.p,rough:pr.rough,jk:pr.jk,lastPaint:0,watchAt:0};
+}
+const simTarget=()=>SIM_YEARS[state.simYi??9]*SIM_PER_YEAR;
+// Run up to `max` draw nights. Stops early on a jackpot or at the target. Returns how many ran.
+function simStep(s,max){
+  const g=GAMES[s.game],R=SIM_ROUNDS[g.key],tgt=simTarget(),buf=new Uint8Array(8),xb=new Uint8Array(2);let ran=0;
+  while(ran<max&&s.n<tgt&&!s.hit){
+    s.n++;ran++;
+    for(let r=0;r<R;r++){
+      s.rounds++;const t=++s.tick;let key=null;
+      if(!g.sepPool){
+        simPick(7,59,s.mark,t,buf);let m=0;for(let i=0;i<6;i++)m+=s.line[buf[i]];
+        if(m>=2)key=m===5&&s.line[buf[6]]?'5+1':m+'+0';
+        if(ran===max||s.n>=tgt||m===6)s.last={main:Array.from(buf.subarray(0,6)),extra:[buf[6]],round:R>1?r+1:null};
+      }else{
+        simPick(5,50,s.mark,t,buf);simPick(2,12,s.xmark,t,xb);let m=0,e=0;for(let i=0;i<5;i++)m+=s.line[buf[i]];e=s.lx[xb[0]]+s.lx[xb[1]];
+        key=m+'+'+e;if(!EM_WIN.has(key))key=null;
+        if(ran===max||s.n>=tgt||key==='5+2')s.last={main:Array.from(buf.subarray(0,5)),extra:Array.from(xb),round:null};
+      }
+      if(key){s.counts[key]=(s.counts[key]||0)+1;s.won+=s.prizes[key]||0;if(key===s.jk&&!s.hit)s.hit={n:s.n,round:R>1?r+1:null}}
+    }
+  }
+  if(s.n>=tgt&&!s.hit)s.done=true;
+  if(s.hit||s.done)s.running=false;
+  return ran;
+}
+const fmtN=v=>Math.round(v).toLocaleString('en-GB');
+const simYearsOf=n=>n/SIM_PER_YEAR;
+const simYearsTxt=n=>{const y=simYearsOf(n);return y<1?`${fmtN(n)} draw${n===1?'':'s'}`:`${y<10?(Math.floor(y*10)/10).toFixed(1):fmtN(Math.floor(y))} years`};
+const simMoney=v=>v>=1e6?money(v):'£'+(v<1000&&v%1?v.toFixed(2):fmtN(v));
+function simBalls(s){
+  const g=GAMES[s.game];if(!s.last)return `<div class="muted small" style="min-height:44px;display:flex;align-items:center">Balls appear here once it starts.</div>`;
+  const mk=(n,isX)=>(isX&&g.sepPool?s.lx[n]:s.line[n])?'simhit':'';
+  return rowBalls(g,[...s.last.main].sort((a,b)=>a-b),[...s.last.extra].sort((a,b)=>a-b),{fit:'fit',mark:mk,anim:speedOf()==='watch'});
+}
+const speedOf=()=>state.simSpeed||'warp';
+function simStatus(s){
+  const g=GAMES[s.game],R=SIM_ROUNDS[g.key],spent=s.n*SIM_PRICE[g.key];
+  const odds=comb(g.mainMax,g.main)*(g.sepPool?comb(g.extraMax,g.extra):1),avgN=odds/R;
+  if(s.hit)return `<div class="banner"><h2>🎉 Jackpot after ${simYearsTxt(s.hit.n)}</h2><p style="margin:0">That's draw ${fmtN(s.hit.n)}${s.hit.round?`, Round ${s.hit.round}`:''}. Along the way you'd have spent <b>${simMoney(spent)}</b> and won <b>${simMoney(s.won)}</b>, jackpot included.</p><div class="row" style="margin-top:10px"><button class="btn ghost" data-act="simmore">Keep going</button><button class="btn ghost" data-act="simreset">Start again</button></div></div>`;
+  if(s.done)return `<div class="note" style="margin-top:10px">No jackpot in ${simYearsTxt(s.n)}. On average it takes about <b>${fmtN(simYearsOf(avgN))} years</b>.</div>`;
+  return '';
+}
+function simTally(s){
+  const g=GAMES[s.game];
+  return `<table><tr><th>Matched</th><th>Times</th><th>Prize</th></tr>${SIM_TIERS[g.key].map(([k,l])=>{const c=s.counts[k]||0;return `<tr><td>${l}</td><td class="${c?'prize':''}">${fmtN(c)}</td><td class="small muted">${simMoney(s.prizes[k])}</td></tr>`}).join('')}</table>`;
+}
+function simNumbers(s){
+  const g=GAMES[s.game],spent=s.n*SIM_PRICE[g.key],net=s.won-spent,tgt=simTarget();
+  return `<div class="row" style="justify-content:space-between;align-items:baseline"><span style="font-size:22px;font-weight:900">${s.n?simYearsTxt(s.n):'Year 0'}</span><span class="small muted">${fmtN(s.n)} draw${s.n===1?'':'s'}${SIM_ROUNDS[g.key]>1?` · ${fmtN(s.rounds)} rounds`:''}</span></div>
+  <div class="fbar" style="margin:8px 0"><i style="width:${Math.min(100,s.n/tgt*100)}%"></i></div>
+  <div class="small">Spent <b>${simMoney(spent)}</b> · won <b>${simMoney(s.won)}</b> · <b style="color:${net>=0?'var(--good)':'var(--bad)'}">${net>=0?'+':'−'}${simMoney(Math.abs(net))}</b></div>`;
+}
+function simBtns(s){
+  const btn=s.running?'⏸ Pause':s.hit||s.done?'':s.n?'▶ Carry on':'▶ Start';
+  return `<div class="row" style="margin-top:12px">${btn?`<button class="btn" data-act="simgo">${btn}</button>`:''}${s.n&&!s.hit?`<button class="btn ghost" data-act="simreset">Reset</button>`:''}</div>`;
+}
+function simCard(g,main,extra,ds){
+  const k=simKey(g,main,extra);
+  if(!sim||sim.key!==k){if(sim)sim.running=false;sim=simNew(g,main,extra,ds)}
+  const s=sim,yi=state.simYi??9,R=SIM_ROUNDS[g.key];
+  const odds=comb(g.mainMax,g.main)*(g.sepPool?comb(g.extraMax,g.extra):1);
+  return `<div class="card" id="simcard"><h2>Play it for years</h2><p class="small muted" style="margin-top:0">Pretend you played this line in every draw, twice a week, for as long as you like. Every draw is random and fair, with the real odds: 1 in ${fmtN(odds/R)} per draw for the jackpot${R>1?` (a line enters both rounds)`:''}.</p>
+  <label class="f">Run for <b id="simyl">${fmtN(SIM_YEARS[yi])} year${yi?'s':''}</b></label>
+  <input type="range" id="simyears" min="0" max="${SIM_YEARS.length-1}" step="1" value="${yi}" style="width:100%">
+  <div class="chips" style="margin-top:8px">${[['watch','Watch'],['fast','Fast'],['warp','Warp']].map(([v,l])=>`<button class="chip ${speedOf()===v?'on':''}" data-act="simspeed" data-speed="${v}">${l}</button>`).join('')}</div>
+  <div id="simballs" style="margin-top:12px">${simBalls(s)}</div>
+  <div id="simnum" style="margin-top:10px">${simNumbers(s)}</div>
+  <div id="simbtns">${simBtns(s)}</div>
+  <div id="simstat">${simStatus(s)}</div>
+  <div id="simtally" style="margin-top:12px">${simTally(s)}</div>
+  <div class="note">Your numbers glow gold when they come up. Prizes: ${g.sepPool?(s.rough?'rough typical EuroMillions prizes (real ones are shared, so they vary)':'typical EuroMillions prizes from stored results (real ones are shared, so they vary)'):'the fixed Lotto prizes'}, and a ${money(s.prizes[s.jk])} jackpot as if you didn't share it. Just for fun: the real draws work the same way, so expect the same result.</div></div>`;
+}
+function simPaint(s){
+  const el=id=>document.getElementById(id);
+  if(!el('simcard')){s.running=false;return}
+  el('simballs').innerHTML=simBalls(s);el('simnum').innerHTML=simNumbers(s);el('simtally').innerHTML=simTally(s);
+  el('simbtns').innerHTML=simBtns(s);el('simstat').innerHTML=simStatus(s);
+}
+function simLoop(now){
+  const s=sim;if(!s||!s.running)return;
+  if(!document.getElementById('simcard')){s.running=false;return}
+  const sp=speedOf();
+  if(sp==='watch'){if(now-s.watchAt>=700){s.watchAt=now;simStep(s,1);simPaint(s)}}
+  else if(sp==='fast'){simStep(s,26);simPaint(s)}
+  else{const t0=performance.now();do{simStep(s,2000)}while(s.running&&performance.now()-t0<28);simPaint(s)}
+  if(!s.running)return;
+  requestAnimationFrame(simLoop);
+}
+function simRun(){if(!sim||sim.hit||sim.done)return;sim.running=true;sim.watchAt=0;requestAnimationFrame(simLoop)}
 function viewCheck(){
   const g=G(),ds=draws(),pm=state.pick.main,pe=state.pick.extra;
   const needM=g.main-pm.size,needE=g.sepPool?g.extra-pe.size:0;
@@ -621,6 +741,7 @@ function viewCheck(){
     for(let m=5;m>=0;m--){t+=`<tr><td><b>${m}</b></td>`;for(let e=2;e>=0;e--){const v=scored.filter(s=>s.m===m&&s.e===e).length;t+=`<td class="${prize.has(m+'-'+e)&&v?'prize':''}">${v}</td>`}t+='</tr>'}
     h+=`<div class="card"><h2>If you'd played it every draw</h2><table>${t}</table><div class="note">Gold = prize tiers. Out of ${ds.length.toLocaleString()} draws.</div></div>`;
   }
+  h+=simCard(g,main,extra,ds);
   return h;
 }
 
@@ -983,6 +1104,10 @@ document.addEventListener('click',async e=>{
     if(a==='keepgen'){const l=state.gen[li];if(L.length>=MAX_LINES){toast(`Up to ${MAX_LINES} lines`);return}L.push({main:l.main,extra:l.extra});saveLines();toast(`Saved as Line ${L.length}`)}
     if(a==='keeppaper'){const p=onPaperLine(g,draws(g));if(L.length>=MAX_LINES){toast(`Up to ${MAX_LINES} lines`);return}
       L.push({main:p.mains.map(b=>b.x).sort((x,y)=>x-y),extra:p.stars.map(b=>b.x).sort((x,y)=>x-y)});saveLines();toast(`Saved as Line ${L.length}`)}
+    if(a==='simgo'){if(sim&&sim.running){sim.running=false}else{simRun()}}
+    if(a==='simspeed'){state.simSpeed=t.dataset.speed}
+    if(a==='simreset'){if(sim){sim.running=false;sim=null}}
+    if(a==='simmore'){if(sim){sim.hit=null;simRun()}}
     if(a==='saveline'){
       const line={main:[...state.pick.main].sort((x,y)=>x-y),extra:[...state.pick.extra].sort((x,y)=>x-y)};
       if(state.editing!=null&&state.editing>=0){L[state.editing]=line;toast(`Line ${state.editing+1} updated`)}
@@ -1001,6 +1126,12 @@ document.addEventListener('click',async e=>{
     if(a==='wipe'){if(!confirm('Clear stored live results? You\'ll need to sync again.'))return;for(const k of Object.keys(GAMES)){state.live[k]=[];await DB.set('draws_'+k,[])}state.meta={};LS.set('meta',{});toast('Cleared')}
   }
   render();
+});
+// Years slider: update the label and target live, without a full re-render so dragging stays smooth
+document.addEventListener('input',e=>{
+  if(e.target.id!=='simyears')return;state.simYi=+e.target.value;
+  const yl=document.getElementById('simyl');if(yl)yl.textContent=fmtN(SIM_YEARS[state.simYi])+' year'+(state.simYi?'s':'');
+  if(sim){sim.done=sim.n>=simTarget()&&!sim.hit;simPaint(sim)}
 });
 document.addEventListener('change',e=>{
   if(e.target.id==='restoreFile'){const f=e.target.files[0];if(f)importBackup(f);e.target.value='';return}
