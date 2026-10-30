@@ -663,3 +663,11 @@ test('simulator stops on a jackpot and says how long it took', () => {
   assert.ok(!doc.querySelector('#simcard'), 'no card without a full line');
   assert.equal(app.errors.length, 0, app.errors.map(e => e.message).join('\n'));
 });
+
+test('simulator end message counts jackpots won along the way (after Keep going)', () => {
+  const doc = app.window.document;
+  app.get("state.game='lotto'; state.view='check'; state.pick={main:new Set([7,8,9,10,11,12]),extra:new Set()}; sim=null; state.simYi=0; render();");
+  app.get("simStep(sim,1e6); sim.counts['6+0']=3; sim.hit=null; sim.done=true; simPaint(sim);");
+  const t = doc.querySelector('#simstat').textContent;
+  assert.ok(t.includes('3 jackpots in') && !t.includes('No jackpot'), t);
+});

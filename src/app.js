@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.2.11';
+const APP_VERSION='1.2.12';
 
 /* ---------- Game definitions ---------- */
 // "since" = first draw of the current format: Lotto went to 59 balls in Oct 2015; EuroMillions to 12 Lucky Stars in Sep 2016.
@@ -659,7 +659,8 @@ function simStatus(s){
   const g=GAMES[s.game],R=SIM_ROUNDS[g.key],spent=s.n*SIM_PRICE[g.key];
   const odds=comb(g.mainMax,g.main)*(g.sepPool?comb(g.extraMax,g.extra):1),avgN=odds/R;
   if(s.hit)return `<div class="banner"><h2>🎉 Jackpot after ${simYearsTxt(s.hit.n)}</h2><p style="margin:0">That's draw ${fmtN(s.hit.n)}${s.hit.round?`, Round ${s.hit.round}`:''}. Along the way you'd have spent <b>${simMoney(spent)}</b> and won <b>${simMoney(s.won)}</b>, jackpot included.</p><div class="row" style="margin-top:10px"><button class="btn ghost" data-act="simmore">Keep going</button><button class="btn ghost" data-act="simreset">Start again</button></div></div>`;
-  if(s.done)return `<div class="note" style="margin-top:10px">No jackpot in ${simYearsTxt(s.n)}. On average it takes about <b>${fmtN(simYearsOf(avgN))} years</b>.</div>`;
+  if(s.done){const j=s.counts[s.jk]||0,avgY=fmtN(simYearsOf(avgN));
+    return `<div class="note" style="margin-top:10px">${j?`${fmtN(j)} jackpot${j===1?'':'s'} in ${simYearsTxt(s.n)}${j>1?`, about 1 every ${fmtN(simYearsOf(s.n/j))} years`:''}. On average it's 1 every <b>${avgY} years</b>.`:`No jackpot in ${simYearsTxt(s.n)}. On average it takes about <b>${avgY} years</b>.`}</div>`}
   return '';
 }
 function simTally(s){

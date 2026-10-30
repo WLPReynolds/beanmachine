@@ -1,6 +1,6 @@
 {
   "name": "beanmachine",
-  "version": "1.2.11",
+  "version": "1.2.12",
   "private": true,
   "description": "Fun statistics for UK Lotto and EuroMillions (PWA)",
   "scripts": {
