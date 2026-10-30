@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.2.8';
+const APP_VERSION='1.2.9';
 
 /* ---------- Game definitions ---------- */
 // "since" = first draw of the current format: Lotto went to 59 balls in Oct 2015; EuroMillions to 12 Lucky Stars in Sep 2016.
@@ -777,7 +777,35 @@ function droughtCard(g,ds,isStar){
   return `<div class="card"><h2>Is “overdue” real?</h2><p class="small muted" style="margin-top:0">How many draws each ${isStar?'star':'number'} waited between appearances, over ${gaps.length.toLocaleString('en-GB')} waits. Every draw is a fresh start, so a ${isStar?'star':'number'} that's been away a long time is no more likely to come up next.</p>
   ${chanceBars(rows)}
   ${cur?`<div class="row" style="margin-top:12px;gap:10px;align-items:center;flex-wrap:nowrap">${ball1(cur.x)}<span class="small" style="flex:1">Away longest right now: <b>${cur.g} draws</b>. Any given ${isStar?'star':'number'} stays away that long about ${odds(cur.g)} of the time. Its chance next draw is still ${(p*100).toFixed(0)}%.</span></div>`:''}
-  <div class="note">Longest wait in this window: ${longest} draws. Long waits are part of the curve, not a sign that something is due.</div></div>`;
+  <div class="note">Longest wait in this window: ${longest} draws. Long waits are part of the curve, not a sign that something is due.</div>${isStar?'':onPaperHTML(g,draws(g))}</div>`;
+}
+// "Due on paper": each ball turns up on average once every N/k draws (each stored draw or round counts as one).
+// Rank balls by how far past that average they are (draws since last seen ÷ average gap), furthest first.
+// Lotto counts the bonus ball as drawn (7 of 59). Balls never seen in the history rank first.
+function onPaperRank(ds,N,k,pick){
+  const avg=N/k,last=Array(N+1).fill(null);
+  ds.forEach((d,i)=>pick(d).forEach(x=>{if(last[x]===null)last[x]=i}));
+  return [...Array(N).keys()].map(i=>i+1).map(x=>{const g=last[x]??ds.length;return{x,g,never:last[x]===null,r:g/avg}})
+    .sort((a,b)=>b.r-a.r||a.x-b.x);
+}
+function onPaperLine(g,ds){
+  const lotto=!g.sepPool,mk=lotto?g.main+1:g.main;
+  const mains=onPaperRank(ds,g.mainMax,mk,d=>lotto?[...d.main,...(d.extra||[])]:d.main).slice(0,g.main);
+  const stars=g.sepPool?onPaperRank(ds,g.extraMax,g.extra,d=>d.extra||[]).slice(0,g.extra):[];
+  return{mains,stars,avgM:g.mainMax/mk,avgS:g.sepPool?g.extraMax/g.extra:null};
+}
+function onPaperHTML(g,ds){
+  if(ds.length<20)return '';
+  const {mains,stars,avgM,avgS}=onPaperLine(g,ds),f=v=>v.toFixed(1);
+  const past=[...mains,...stars].filter(b=>b.r>=1).length,all=mains.length+stars.length;
+  const desc=b=>`${b.x}: ${b.never?b.g+'+':b.g} draw${b.g===1?'':'s'} (${b.r.toFixed(1)}×)`;
+  const pool=!g.sepPool?`${g.main+1} of ${g.mainMax} balls come out each draw (bonus included), so each one turns up on average every <b>${f(avgM)} draws</b>`
+    :`each main number turns up on average every <b>${f(avgM)} draws</b>, and each star every <b>${f(avgS)}</b>`;
+  return `<h3>Due on paper</h3><p class="small muted" style="margin-top:0">${pool[0].toUpperCase()+pool.slice(1)}. This line is the ${g.sepPool?'numbers and stars':'balls'} furthest past their average gap. ${past===all?'All of them are':past?`${past} of them ${past===1?'is':'are'}`:'None of them is yet'} past it.</p>
+  ${rowBalls(g,mains.map(b=>b.x).sort((a,b)=>a-b),stars.map(b=>b.x).sort((a,b)=>a-b),{fit:'fit'})}
+  <div class="note">Draws since last seen, and how many times its average gap that is: ${[...mains,...stars].map(desc).join(' · ')}</div>
+  <button class="btn ghost" style="margin-top:10px" data-act="keeppaper">Save to My lines</button>
+  <div class="note">On paper only. The machine has no memory, so each ${g.sepPool?'number still has a 1 in '+f(avgM)+' chance of coming out next draw, and each star 1 in '+f(avgS):'ball still has a 1 in '+f(avgM)+' chance of coming out next draw'}.</div>`;
 }
 // Draws (k of 1..N) with exactly j consecutive pairs: C(k−1, j)·C(N−k+1, k−j)
 function consecutiveDist(N,k){return[...Array(k).keys()].map(j=>comb(k-1,j)*comb(N-k+1,k-j)/comb(N,k))}
@@ -953,6 +981,8 @@ document.addEventListener('click',async e=>{
     if(a==='acceptline'){const s=L[li].sugg;if(s&&!s.none){L[li]={main:s.main,extra:s.extra};saveLines();toast('Line updated ✨')}}
     if(a==='rerollline'){delete L[li].sugg;saveLines()}
     if(a==='keepgen'){const l=state.gen[li];if(L.length>=MAX_LINES){toast(`Up to ${MAX_LINES} lines`);return}L.push({main:l.main,extra:l.extra});saveLines();toast(`Saved as Line ${L.length}`)}
+    if(a==='keeppaper'){const p=onPaperLine(g,draws(g));if(L.length>=MAX_LINES){toast(`Up to ${MAX_LINES} lines`);return}
+      L.push({main:p.mains.map(b=>b.x).sort((x,y)=>x-y),extra:p.stars.map(b=>b.x).sort((x,y)=>x-y)});saveLines();toast(`Saved as Line ${L.length}`)}
     if(a==='saveline'){
       const line={main:[...state.pick.main].sort((x,y)=>x-y),extra:[...state.pick.extra].sort((x,y)=>x-y)};
       if(state.editing!=null&&state.editing>=0){L[state.editing]=line;toast(`Line ${state.editing+1} updated`)}

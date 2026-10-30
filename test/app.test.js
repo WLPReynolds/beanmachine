@@ -586,3 +586,41 @@ test('a stalled request to the Worker gives up instead of waiting for ever', asy
   const msg = await a.get(`api('/history?game=lotto')`).catch(e => e.message);
   assert.match(msg, /No answer/);
 });
+
+/* ---------- Due on paper ---------- */
+test('onPaperRank ranks balls by draws since last seen ÷ average gap, furthest first', () => {
+  // Newest first: 1 in the latest draw, 2 one draw ago, 3 never seen (counts as the whole history, 3 draws)
+  const ds = [{ main: [1] }, { main: [2] }, { main: [1] }];
+  const r = fn('onPaperRank')(ds, 3, 1, d => d.main);
+  assert.deepEqual([...r].map(b => [b.x, b.g, b.never]), [[3, 3, true], [2, 1, false], [1, 0, false]]);
+  assert.ok(Math.abs(r[0].r - 1) < 1e-9); // average gap 3/1 = 3, so 3 draws is 1.0×
+});
+
+test('due on paper: Lotto counts the bonus and gives 6 balls; EuroMillions gives 5 numbers and 2 stars', () => {
+  const lotto = app.get("onPaperLine(GAMES.lotto, draws(GAMES.lotto))");
+  assert.equal(lotto.mains.length, 6);
+  assert.equal(lotto.stars.length, 0);
+  assert.ok(Math.abs(lotto.avgM - 59 / 7) < 1e-9);
+  // A ball that came out as the latest bonus has gap 0, so it can't top the list
+  const last = app.get("draws(GAMES.lotto)[0]");
+  assert.ok(!lotto.mains.some(b => last.extra.includes(b.x)));
+  const em = app.get("onPaperLine(GAMES.euromillions, draws(GAMES.euromillions))");
+  assert.equal(em.mains.length, 5);
+  assert.equal(em.stars.length, 2);
+  assert.ok(Math.abs(em.avgM - 10) < 1e-9 && Math.abs(em.avgS - 6) < 1e-9);
+});
+
+test('due on paper shows in the overdue card (main balls only) and saves to My lines', () => {
+  const doc = app.window.document;
+  app.get("state.game='lotto'; state.view='stats'; state.statPool='main'; state.statWin='all'; myLines.lotto=[]; render();");
+  assert.ok(doc.querySelector('#view').innerHTML.includes('Due on paper'));
+  doc.querySelector('[data-act="keeppaper"]').click();
+  const saved = app.get("JSON.stringify(myLines.lotto)");
+  const want = app.get("JSON.stringify([{main:onPaperLine(GAMES.lotto,draws(GAMES.lotto)).mains.map(b=>b.x).sort((a,b)=>a-b),extra:[]}])");
+  assert.equal(saved, want);
+  app.get("state.game='euromillions'; state.statPool='extra'; render();");
+  assert.ok(!doc.querySelector('#view').innerHTML.includes('Due on paper'));
+  app.get("state.statPool='main'; render();");
+  assert.ok(doc.querySelector('#view').innerHTML.includes('Due on paper'));
+  assert.equal(app.errors.length, 0, app.errors.map(e => e.message).join('\n'));
+});
