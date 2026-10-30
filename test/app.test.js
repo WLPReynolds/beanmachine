@@ -559,3 +559,30 @@ test('a sync that says the code was removed locks Stats again; Latest and Check 
     assert.doesNotMatch(doc.querySelector('#view').textContent, /invited testers/, v);
   }
 });
+
+/* ---------- Weak signal ---------- */
+test('a failed background update says so in the header, and clears once it works', async () => {
+  const a = loadApp({ settings: { demo: false, workerUrl: 'https://w.example.workers.dev' } });
+  const d = { date: '2026-10-28', round: 'Round 1', main: [2, 4, 21, 26, 30, 38], extra: [51], prizes: null };
+  let ok = false;
+  a.window.fetch = async u => { if (!ok) throw new TypeError('Failed to fetch'); return { ok: true, json: async () => ({ draws: /lotto/.test(u) ? [d] : [], full: true, rev: 'r' }) }; };
+  await new Promise(r => setTimeout(r, 30));
+  a.get(`state.live.lotto=[${JSON.stringify(d)}]`);
+  await a.get('syncAll(false,true)');
+  const hdr = () => a.window.document.querySelector('#hdr').textContent;
+  assert.match(hdr(), /Couldn't update · showing results/);
+  ok = true;
+  await a.get('syncAll(false,true)');
+  assert.doesNotMatch(hdr(), /Couldn't update/);
+  assert.match(hdr(), /Live · 1 draws · updated/);
+  assert.equal(a.errors.length, 0, a.errors.map(e => e.message).join('\n'));
+});
+
+test('a stalled request to the Worker gives up instead of waiting for ever', async () => {
+  const a = loadApp({ settings: { demo: true, workerUrl: 'https://w.example.workers.dev' } });
+  const real = a.window.setTimeout.bind(a.window);
+  a.window.setTimeout = (f, ms, ...x) => real(f, ms === 20e3 ? 5 : ms, ...x); // the 20-second limit, sped up
+  a.window.fetch = (u, o) => new Promise((_, rej) => o.signal.addEventListener('abort', () => rej(new Error('aborted'))));
+  const msg = await a.get(`api('/history?game=lotto')`).catch(e => e.message);
+  assert.match(msg, /No answer/);
+});
