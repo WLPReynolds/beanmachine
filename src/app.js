@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.2.10';
+const APP_VERSION='1.2.11';
 
 /* ---------- Game definitions ---------- */
 // "since" = first draw of the current format: Lotto went to 59 balls in Oct 2015; EuroMillions to 12 Lucky Stars in Sep 2016.
@@ -669,7 +669,7 @@ function simTally(s){
 function simNumbers(s){
   const g=GAMES[s.game],spent=s.n*SIM_PRICE[g.key],net=s.won-spent,tgt=simTarget();
   return `<div class="row" style="justify-content:space-between;align-items:baseline"><span style="font-size:22px;font-weight:900">${s.n?simYearsTxt(s.n):'Year 0'}</span><span class="small muted">${fmtN(s.n)} draw${s.n===1?'':'s'}${SIM_ROUNDS[g.key]>1?` · ${fmtN(s.rounds)} rounds`:''}</span></div>
-  <div class="fbar" style="margin:8px 0"><i style="width:${Math.min(100,s.n/tgt*100)}%"></i></div>
+  <div class="fbar" style="margin:8px 0;width:100%"><i style="width:${Math.min(100,s.n/tgt*100)}%"></i></div>
   <div class="small">Spent <b>${simMoney(spent)}</b> · won <b>${simMoney(s.won)}</b> · <b style="color:${net>=0?'var(--good)':'var(--bad)'}">${net>=0?'+':'−'}${simMoney(Math.abs(net))}</b></div>`;
 }
 function simBtns(s){
@@ -685,12 +685,12 @@ function simCard(g,main,extra,ds){
   <label class="f">Run for <b id="simyl">${fmtN(SIM_YEARS[yi])} year${yi?'s':''}</b></label>
   <input type="range" id="simyears" min="0" max="${SIM_YEARS.length-1}" step="1" value="${yi}" style="width:100%">
   <div class="chips" style="margin-top:8px">${[['watch','Watch'],['fast','Fast'],['warp','Warp']].map(([v,l])=>`<button class="chip ${speedOf()===v?'on':''}" data-act="simspeed" data-speed="${v}">${l}</button>`).join('')}</div>
-  <div id="simballs" style="margin-top:12px">${simBalls(s)}</div>
+  <div class="simview"><canvas id="simwarp" aria-hidden="true"></canvas><div id="simballs">${simBalls(s)}</div></div>
   <div id="simnum" style="margin-top:10px">${simNumbers(s)}</div>
   <div id="simbtns">${simBtns(s)}</div>
   <div id="simstat">${simStatus(s)}</div>
   <div id="simtally" style="margin-top:12px">${simTally(s)}</div>
-  <div class="note">Your numbers glow gold when they come up. Prizes: ${g.sepPool?(s.rough?'rough typical EuroMillions prizes (real ones are shared, so they vary)':'typical EuroMillions prizes from stored results (real ones are shared, so they vary)'):'the fixed Lotto prizes'}, and a ${money(s.prizes[s.jk])} jackpot as if you didn't share it. Just for fun: the real draws work the same way, so expect the same result.</div></div>`;
+  ${(setTimeout(()=>{if(!simLoopOn)starsDraw(0)},0),'')}<div class="note">Your numbers glow gold when they come up. Prizes: ${g.sepPool?(s.rough?'rough typical EuroMillions prizes (real ones are shared, so they vary)':'typical EuroMillions prizes from stored results (real ones are shared, so they vary)'):'the fixed Lotto prizes'}, and a ${money(s.prizes[s.jk])} jackpot as if you didn't share it. Just for fun: the real draws work the same way, so expect the same result.</div></div>`;
 }
 function simPaint(s){
   const el=id=>document.getElementById(id);
@@ -698,17 +698,49 @@ function simPaint(s){
   el('simballs').innerHTML=simBalls(s);el('simnum').innerHTML=simNumbers(s);el('simtally').innerHTML=simTally(s);
   el('simbtns').innerHTML=simBtns(s);el('simstat').innerHTML=simStatus(s);
 }
+// Warp takes at least this long for the chosen years (slower phones may take longer), after a short ramp up
+const SIM_WARP_SECS=8,SIM_WARP_RAMP=1800;
+let simLoopOn=false,simLast=0;
 function simLoop(now){
-  const s=sim;if(!s||!s.running)return;
-  if(!document.getElementById('simcard')){s.running=false;return}
-  const sp=speedOf();
-  if(sp==='watch'){if(now-s.watchAt>=700){s.watchAt=now;simStep(s,1);simPaint(s)}}
-  else if(sp==='fast'){simStep(s,26);simPaint(s)}
-  else{const t0=performance.now();do{simStep(s,2000)}while(s.running&&performance.now()-t0<28);simPaint(s)}
-  if(!s.running)return;
-  requestAnimationFrame(simLoop);
+  const s=sim,dt=Math.min(50,simLast?now-simLast:16);simLast=now;
+  if(!document.getElementById('simcard')){if(s)s.running=false;simLoopOn=false;starV=0;return}
+  const sp=speedOf();let ramp=1;
+  if(s&&s.running){
+    if(sp==='watch'){if(now-s.watchAt>=700){s.watchAt=now;simStep(s,1);simPaint(s)}}
+    else if(sp==='fast'){simStep(s,26);simPaint(s)}
+    else{
+      ramp=Math.min(1,((now-s.warpAt)/SIM_WARP_RAMP)**2);
+      const per=Math.max(1,Math.ceil(simTarget()/(SIM_WARP_SECS*60)*ramp)),t0=performance.now();let done=0;
+      do{done+=simStep(s,Math.min(2000,per-done))}while(s.running&&done<per&&performance.now()-t0<28);
+      simPaint(s);
+    }
+  }
+  const run=s&&s.running,want=run?(sp==='warp'?0.12+0.88*ramp:sp==='fast'?0.35:0.05):0;
+  starV+=(want-starV)*Math.min(1,dt/(want>starV?200:450));
+  starsDraw(dt);
+  if(run||starV>0.004){requestAnimationFrame(simLoop)}else{starV=0;simLoopOn=false;starsDraw(0)}
 }
-function simRun(){if(!sim||sim.hit||sim.done)return;sim.running=true;sim.watchAt=0;requestAnimationFrame(simLoop)}
+function simStartLoop(){if(simLoopOn)return;simLoopOn=true;simLast=0;requestAnimationFrame(simLoop)}
+// Starfield behind the balls: stars fly towards you, streaking at speed, and coast to a stop when the run ends
+const STARS=Array.from({length:150},()=>({x:Math.random()*2-1,y:Math.random()*2-1,z:Math.random()}));
+let starV=0;
+function starsDraw(dt){
+  const c=document.getElementById('simwarp');if(!c||!c.getContext)return;
+  let ctx;try{ctx=c.getContext('2d')}catch(e){return}if(!ctx)return;
+  const dpr=window.devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;if(!w||!h)return;
+  if(c.width!==Math.round(w*dpr)||c.height!==Math.round(h*dpr)){c.width=Math.round(w*dpr);c.height=Math.round(h*dpr)}
+  ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);ctx.lineCap='round';
+  const cx=w/2,cy=h/2,k=Math.max(w,h)*0.18,mv=starV*dt*0.0016;
+  for(const st of STARS){
+    st.z-=mv;
+    const px=cx+st.x*k/st.z,py=cy+st.y*k/st.z;
+    if(st.z<=0.03||px<-20||px>w+20||py<-20||py>h+20){st.x=Math.random()*2-1;st.y=Math.random()*2-1;st.z=0.8+Math.random()*0.2;continue}
+    const qz=Math.min(1.2,st.z+starV*0.09+0.004),qx=cx+st.x*k/qz,qy=cy+st.y*k/qz,a=Math.min(1,(1.05-st.z)*1.3);
+    ctx.strokeStyle=st.x*st.y>0?`rgba(255,236,190,${a})`:`rgba(215,200,255,${a})`;
+    ctx.lineWidth=0.6+(1-st.z)*1.8;ctx.beginPath();ctx.moveTo(qx,qy);ctx.lineTo(px,py);ctx.stroke();
+  }
+}
+function simRun(){if(!sim||sim.hit||sim.done)return;sim.running=true;sim.watchAt=0;sim.warpAt=performance.now();simStartLoop()}
 function viewCheck(){
   const g=G(),ds=draws(),pm=state.pick.main,pe=state.pick.extra;
   const needM=g.main-pm.size,needE=g.sepPool?g.extra-pe.size:0;
@@ -1105,7 +1137,7 @@ document.addEventListener('click',async e=>{
     if(a==='keeppaper'){const p=onPaperLine(g,draws(g));if(L.length>=MAX_LINES){toast(`Up to ${MAX_LINES} lines`);return}
       L.push({main:p.mains.map(b=>b.x).sort((x,y)=>x-y),extra:p.stars.map(b=>b.x).sort((x,y)=>x-y)});saveLines();toast(`Saved as Line ${L.length}`)}
     if(a==='simgo'){if(sim&&sim.running){sim.running=false}else{simRun()}}
-    if(a==='simspeed'){state.simSpeed=t.dataset.speed}
+    if(a==='simspeed'){state.simSpeed=t.dataset.speed;if(sim)sim.warpAt=performance.now()}
     if(a==='simreset'){if(sim){sim.running=false;sim=null}}
     if(a==='simmore'){if(sim){sim.hit=null;simRun()}}
     if(a==='saveline'){
