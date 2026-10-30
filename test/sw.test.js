@@ -13,12 +13,14 @@ function makeSW() {
   const site = new Map();      // what the server currently returns
   const httpCache = new Map(); // what the browser's HTTP cache still holds (possibly old)
   let online = true;
+  let delay = 0; // a weak signal: requests take this long (real ms) before they answer
   const fetchLog = [];
 
   async function fakeFetch(input) {
     const req = input instanceof Request ? input : new Request(abs(input));
     const u = new URL(req.url); const k = u.pathname === '/' ? '/index.html' : u.pathname;
     fetchLog.push({ url: req.url, cache: req.cache });
+    if (delay) await new Promise(r => setTimeout(r, delay));
     if (!online) throw new TypeError('Failed to fetch');
     if (req.cache !== 'reload' && req.cache !== 'no-store' && httpCache.has(k)) return new Response(httpCache.get(k));
     if (!site.has(k)) return new Response('not found', { status: 404 });
@@ -55,12 +57,24 @@ function makeSW() {
   const self = { addEventListener: (t, f) => { handlers[t] = f; }, skipWaiting: async () => {}, clients: { claim: async () => {} } };
   // In a real worker, relative URLs resolve against the worker's own address
   class SWRequest extends Request { constructor(u, o) { super(typeof u === 'string' ? abs(u) : u, o); } }
-  vm.runInNewContext(src, { self, caches, fetch: fakeFetch, Request: SWRequest, Response, URL, Promise, Error, TypeError, location: new URL(ORIGIN + '/sw.js') });
+  vm.runInNewContext(src, { self, caches, fetch: fakeFetch, Request: SWRequest, Response, URL, Promise, Error, TypeError, location: new URL(ORIGIN + '/sw.js'),
+    // Worker time runs 100× faster, so its 3-second wait takes 30 ms here
+    setTimeout: (f, ms) => setTimeout(f, ms / 100), clearTimeout });
 
   async function lifecycle(type) {
     const waits = [];
     handlers[type]({ waitUntil: p => waits.push(p) });
     await Promise.all(waits);
+  }
+  // Like request(), but answers as soon as the page has a response, without waiting for background work
+  function requestNow(url, { navigate = false } = {}) {
+    const req = new Request(abs(url));
+    let resp; const waits = [];
+    const e = { request: navigate ? { url: req.url, method: 'GET', mode: 'navigate' } : req,
+      respondWith: p => { resp = p; }, waitUntil: p => waits.push(p) };
+    handlers.fetch(e);
+    const t0 = Date.now();
+    return { response: resp.then(async r => ({ type: r.type, text: await r.text(), ms: Date.now() - t0 })), background: Promise.all(waits) };
   }
   async function request(url, { navigate = false } = {}) {
     const req = new Request(abs(url));
@@ -72,7 +86,7 @@ function makeSW() {
     const r = await resp; await Promise.all(waits);
     return r ? r.text() : undefined;
   }
-  return { site, httpCache, fetchLog, setOnline: v => { online = v; }, lifecycle, request, stores };
+  return { site, httpCache, fetchLog, setOnline: v => { online = v; }, setDelay: ms => { delay = ms; }, lifecycle, request, requestNow, stores };
 }
 
 const SHELL_FILES = ['/src/app.js', '/manifest.json', '/icon-192.png', '/icon-512.png', '/icon-maskable-512.png'];
@@ -136,4 +150,53 @@ test('activate deletes old caches; other origins are left alone', async () => {
   await sw.lifecycle('install'); await sw.lifecycle('activate');
   assert.deepEqual([...sw.stores.keys()].filter(k => k.startsWith('beanmachine-')).length, 1);
   assert.equal(await sw.request('https://lotto-lab-proxy.example.workers.dev/history'), null);
+});
+
+test('weak signal: the saved page opens after the short wait instead of hanging', async () => {
+  const sw = makeSW();
+  seed(sw, 'v1');
+  await sw.lifecycle('install'); await sw.lifecycle('activate');
+  sw.site.set('/index.html', 'v2');
+  sw.setDelay(400); // like a stalled connection: far longer than the worker's wait
+  const { response, background } = sw.requestNow('/', { navigate: true });
+  const r = await response;
+  assert.equal(r.text, 'v1', 'the saved copy is shown');
+  assert.ok(r.ms < 250, `answered in ${r.ms} ms, before the network`);
+  await background; // the slow download still finishes and refreshes the saved copy
+  sw.setDelay(0); sw.setOnline(false);
+  assert.equal(await sw.request('/', { navigate: true }), 'v2', 'next open shows the new version');
+});
+
+test('weak signal: the script is also served from the saved copy', async () => {
+  const sw = makeSW();
+  seed(sw, 'page');
+  await sw.lifecycle('install'); await sw.lifecycle('activate');
+  sw.setDelay(400);
+  const r = await sw.requestNow('/src/app.js?v=9.9.9').response;
+  assert.equal(r.text, 'file /src/app.js');
+  assert.ok(r.ms < 250);
+});
+
+test('a slow but working network still wins if it answers within the wait', async () => {
+  const sw = makeSW();
+  seed(sw, 'v1');
+  await sw.lifecycle('install'); await sw.lifecycle('activate');
+  sw.site.set('/index.html', 'v2');
+  sw.setDelay(5); // well under the 30 ms (scaled 3 s) wait
+  assert.equal((await sw.requestNow('/', { navigate: true }).response).text, 'v2');
+});
+
+test('nothing saved yet: a slow network is waited for, not given up on', async () => {
+  const sw = makeSW();
+  seed(sw, 'v1'); // no install, so nothing is cached
+  sw.setDelay(100);
+  assert.equal((await sw.requestNow('/', { navigate: true }).response).text, 'v1');
+});
+
+test('nothing saved and no connection: the request fails rather than hanging', async () => {
+  const sw = makeSW();
+  seed(sw, 'v1');
+  sw.setOnline(false);
+  const r = await sw.requestNow('/', { navigate: true }).response;
+  assert.equal(r.type, 'error', 'a network error, which the browser shows as its offline page');
 });

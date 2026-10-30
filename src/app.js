@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.2.7';
+const APP_VERSION='1.2.8';
 
 /* ---------- Game definitions ---------- */
 // "since" = first draw of the current format: Lotto went to 59 balls in Oct 2015; EuroMillions to 12 Lucky Stars in Sep 2016.
@@ -99,7 +99,13 @@ function bumpCalls(){const m=iso(new Date()).slice(0,7);const c=LS.get('calls',{
 // costsCall: true only for routes that go straight to the lottery API (not the Worker's stored history)
 async function api(path,costsCall=true){
   if(!settings.workerUrl)throw new Error('No worker URL set');
-  const r=await fetch(settings.workerUrl.replace(/\/$/,'')+path);if(costsCall)bumpCalls();
+  // A weak signal can stall a request for minutes, so give up after 20 seconds and say so
+  const ac=typeof AbortController==='function'?new AbortController():null,timer=ac&&setTimeout(()=>ac.abort(),20e3);
+  let r;
+  try{r=await fetch(settings.workerUrl.replace(/\/$/,'')+path,ac?{signal:ac.signal}:undefined)}
+  catch(e){throw new Error(ac?.signal.aborted?'No answer — the signal may be too weak':navigator.onLine===false?'No connection':'Couldn\'t reach the results service')}
+  finally{clearTimeout(timer)}
+  if(costsCall)bumpCalls();
   const j=await r.json().catch(()=>({}));
   if(j.remaining!=null){state.meta.remaining={n:j.remaining,limit:j.limit,at:j.rateAt?Date.parse(j.rateAt):Date.now()};LS.set('meta',state.meta)}
   if(!r.ok)throw new Error(j.error||('HTTP '+r.status));return j;
@@ -171,7 +177,7 @@ async function syncGame(g,full){
   state.meta[g.key]={lastSync:Date.now(),nextJackpot:nextJackpot??state.meta[g.key]?.nextJackpot??null};LS.set('meta',state.meta);
 }
 async function syncAll(full,quiet){
-  state.syncing=true;if(!draws().length)render();
+  state.syncing=true;state.syncError=null;if(!draws().length)render();else renderHeader();
   try{for(const g of Object.values(GAMES))await syncGame(g,full);if(!quiet)toast('Results updated ✨')}
   catch(e){if(!quiet)toast('Update failed: '+e.message);state.syncError=e.message}
   state.syncing=false;render();
@@ -511,7 +517,12 @@ function renderHeader(){
   const g=G(),ds=draws();let badge;
   if(settings.demo)badge=`<span class="badge demo">✨ SAMPLE DATA — not real results</span>`;
   else if(!ds.length)badge=`<span class="badge">${state.syncing?'Fetching results…':settings.workerUrl?'No results yet':'No results yet — add your worker in Settings'}</span>`;
-  else{const t=state.meta[g.key]?.lastSync;badge=`<span class="badge">Live · ${ds.length} draws${t?' · updated '+new Date(t).toLocaleString('en-GB',{weekday:'short',hour:'2-digit',minute:'2-digit'}):''}</span>`}
+  else{
+    const t=state.meta[g.key]?.lastSync,when=t?new Date(t).toLocaleString('en-GB',{weekday:'short',hour:'2-digit',minute:'2-digit'}):'';
+    if(state.syncing)badge=`<span class="badge">Live · ${ds.length} draws · checking for new results…</span>`;
+    else if(state.syncError)badge=`<span class="badge warn">⚠️ Couldn't update · showing results${when?' from '+when:' saved on this phone'}</span>`;
+    else badge=`<span class="badge">Live · ${ds.length} draws${when?' · updated '+when:''}</span>`;
+  }
   const sp=[[8,20,0],[78,14,.8],[90,52,1.6],[55,8,1.2],[30,60,2]].map(([l,t,d])=>`<i class="spark" style="left:${l}%;top:${t}px;animation-delay:${d}s"></i>`).join('');
   $('#hdr').innerHTML=`${sp}<button class="hstory${state.view==='story'?' on':''}" data-view="story" aria-label="The story">📖 Story</button><h1>Bean Machine ✦</h1><div class="sub">Stats for fun — every line has the same chance</div>
   <div class="seg">${Object.values(GAMES).map(x=>`<button data-game="${x.key}" class="${x.key===g.key?'on':''}">${x.name}</button>`).join('')}</div>${badge}`;
@@ -1012,5 +1023,6 @@ window.addEventListener('appinstalled',()=>{installPrompt=null;render();toast('I
   render();
   maybeAutoSync();
   document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')maybeAutoSync()});
+  window.addEventListener('online',()=>maybeAutoSync()); // signal back: try again straight away
   if('serviceWorker' in navigator)try{navigator.serviceWorker.register('sw.js')}catch(e){}
 })();
