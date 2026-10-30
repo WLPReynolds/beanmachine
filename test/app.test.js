@@ -624,3 +624,42 @@ test('due on paper shows in the overdue card (main balls only) and saves to My l
   assert.ok(doc.querySelector('#view').innerHTML.includes('Due on paper'));
   assert.equal(app.errors.length, 0, app.errors.map(e => e.message).join('\n'));
 });
+
+/* ---------- Play it for years ---------- */
+test('simulator draws fairly: Lotto Match 2 and Match 3 rates per round match the real odds', () => {
+  const s = app.get("sim=simNew(GAMES.lotto,[1,2,3,4,5,6],[],[]); state.simYi=18; simStep(sim,100000); sim");
+  assert.equal(s.n, 100000);
+  assert.equal(s.rounds, 200000); // a Lotto line enters both rounds
+  const C = fn('comb'), all = C(59, 6);
+  for (const [k, m] of [['2+0', 2], ['3+0', 3]]) {
+    const p = C(6, m) * C(53, 6 - m) / all, exp = p * s.rounds, sd = Math.sqrt(exp * (1 - p));
+    assert.ok(Math.abs((s.counts[k] || 0) - exp) < 5 * sd, `${k}: ${s.counts[k]} vs ${exp.toFixed(0)}`);
+  }
+  // Every simulated draw is 6 different balls from 1–59 plus a different bonus
+  const l = s.last, b = new Set([...l.main, ...l.extra]);
+  assert.equal(b.size, 7);
+  assert.ok([...b].every(x => x >= 1 && x <= 59));
+});
+
+test('simulator stops at the chosen number of years, and money adds up', () => {
+  const s = app.get("state.simYi=0; sim=simNew(GAMES.euromillions,[1,2,3,4,5],[1,2],draws(GAMES.euromillions)); simStep(sim,1e6); sim");
+  if (!s.hit) {
+    assert.equal(s.n, 104); // 1 year = 104 draws
+    assert.ok(s.done);
+  }
+  const won = Object.entries(s.counts).reduce((a, [k, c]) => a + c * s.prizes[k], 0);
+  assert.ok(Math.abs(won - s.won) < 1e-6);
+});
+
+test('simulator stops on a jackpot and says how long it took', () => {
+  const doc = app.window.document;
+  app.get("state.game='lotto'; state.view='check'; state.editing=null; state.pick={main:new Set([7,8,9,10,11,12]),extra:new Set()}; sim=null; render();");
+  assert.ok(doc.querySelector('#simcard'), 'card shows once a full line is picked');
+  // Force a jackpot on the next draw by making the line every number (so all 6 drawn balls match)
+  app.get("sim.line.fill(1); state.simYi=18; simStep(sim,10); simPaint(sim);");
+  assert.ok(app.get('sim.hit') && app.get('sim.hit.n') === 1);
+  assert.ok(doc.querySelector('#simstat').textContent.includes('Jackpot after'));
+  app.get("state.pick={main:new Set(),extra:new Set()}; render();");
+  assert.ok(!doc.querySelector('#simcard'), 'no card without a full line');
+  assert.equal(app.errors.length, 0, app.errors.map(e => e.message).join('\n'));
+});
