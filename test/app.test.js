@@ -682,6 +682,8 @@ test('civilFromDays matches the real calendar, and keeps going past the year 275
   // 400 Gregorian years are exactly 146,097 days, so a million-year jump lands on the same month and day
   const z = Date.UTC(2026, 9, 31) / 864e5;
   assert.deepEqual({ ...civ(z + 2500 * 146097) }, { y: 1002026, m: 10, d: 31 });
+  app.get("sim=simNew(GAMES.lotto,[1,2,3,4,5,6],[],[])");
+  assert.match(app.get('simDate(sim,2e8)'), /^[A-Z][a-z]{2} \d+ [A-Z][a-z]{2} in the year \d{7}$/);
 });
 
 test('simulated draws follow the real draw days from the next draw', () => {
