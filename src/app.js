@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.3.0';
+const APP_VERSION='1.3.1';
 
 /* ---------- Game definitions ---------- */
 // "since" = first draw of the current format: Lotto went to 59 balls in Oct 2015; EuroMillions to 12 Lucky Stars in Sep 2016.
@@ -524,7 +524,7 @@ function renderHeader(){
     else badge=`<span class="badge">Live · ${ds.length} draws${when?' · updated '+when:''}</span>`;
   }
   const sp=[[8,20,0],[78,14,.8],[90,52,1.6],[55,8,1.2],[30,60,2]].map(([l,t,d])=>`<i class="spark" style="left:${l}%;top:${t}px;animation-delay:${d}s"></i>`).join('');
-  const pk=partyToday(),deco=partyHeaderHTML(pk);$('#hdr').classList.toggle('party-hdr',!!deco);
+  const pk=partyToday(),deco=partyHeaderHTML(pk);document.documentElement.dataset.party=pk||'';$('#hdr').classList.toggle('party-hdr',!!deco);
   $('#hdr').innerHTML=`${deco}${sp}<button class="hstory${state.view==='story'?' on':''}" data-view="story" aria-label="The story">📖 Story</button><h1>Bean Machine ✦</h1><div class="sub">Stats for fun — every line has the same chance</div>
   <div class="seg">${Object.values(GAMES).map(x=>`<button data-game="${x.key}" class="${x.key===g.key?'on':''}">${x.name}</button>`).join('')}</div>${badge}`;
 }
@@ -1267,6 +1267,12 @@ async function syncHolidays(){
     return before!==JSON.stringify(ev);
   }catch(e){return false} // offline: the cached copy (or the fixed-date fallbacks) will do
 }
+// Easter Sunday for a year (Gregorian computus), as a local-midnight Date
+function easterSunday(y){
+  const a=y%19,b=Math.floor(y/100),c=y%100,d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3);
+  const h=(19*a+b-d-g+15)%30,i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7,m=Math.floor((a+11*h+22*l)/451);
+  const n=h+l-7*m+114;return new Date(y,Math.floor(n/31)-1,n%31+1);
+}
 function partyFor(d=new Date(),hols=LS.get('hols',[])){
   const m=d.getMonth()+1,day=d.getDate(),h=(hols||[]).find(e=>e.date===iso(d));
   if(h&&h.bunting){
@@ -1276,6 +1282,8 @@ function partyFor(d=new Date(),hols=LS.get('hols',[])){
     return 'bunting';
   }
   if(m===12&&(day===25||day===26))return 'xmas'; // even when the bank holiday moves to a weekday
+  const es=easterSunday(d.getFullYear()),ed=Math.round((new Date(d.getFullYear(),d.getMonth(),day)-es)/864e5);
+  if(ed===0||ed===1)return 'easter'; // Easter Sunday, and Monday before the feed has loaded
   if(m===1&&day===1)return 'newyear';
   if(m===10&&day===31)return 'halloween';
   if(m===11&&day===5)return 'bonfire';
@@ -1419,6 +1427,26 @@ function partyHalloween(layer){
   return 9000;
 }
 
+const BUNNY_SVG='<svg viewBox="0 0 120 170" width="100%" height="100%"><g fill="#f4effa"><g class="pb-ear" style="transform-origin:42px 62px"><ellipse cx="42" cy="34" rx="11" ry="32" transform="rotate(-8 42 34)"/><ellipse cx="42" cy="36" rx="5" ry="23" fill="#ffb6cf" transform="rotate(-8 42 36)"/></g><g class="pb-ear pb-ear-r" style="transform-origin:78px 62px"><ellipse cx="78" cy="34" rx="11" ry="32" transform="rotate(8 78 34)"/><ellipse cx="78" cy="36" rx="5" ry="23" fill="#ffb6cf" transform="rotate(8 78 36)"/></g><ellipse cx="60" cy="138" rx="38" ry="34" fill="#e9e1f2"/><ellipse cx="60" cy="144" rx="22" ry="24" fill="#fff"/><circle cx="60" cy="82" r="30"/><ellipse cx="38" cy="166" rx="14" ry="7" fill="#e9e1f2"/><ellipse cx="82" cy="166" rx="14" ry="7" fill="#e9e1f2"/></g><circle cx="49" cy="76" r="4.6" fill="#2a1040"/><circle cx="71" cy="76" r="4.6" fill="#2a1040"/><circle cx="50.5" cy="74.5" r="1.4" fill="#fff"/><circle cx="72.5" cy="74.5" r="1.4" fill="#fff"/><circle cx="41" cy="90" r="5" fill="#ffb6cf" opacity=".55"/><circle cx="79" cy="90" r="5" fill="#ffb6cf" opacity=".55"/><g stroke="#b9a9d9" stroke-width="1.2" stroke-linecap="round"><path d="M50 91 28 87M50 94 29 96M70 91 92 87M70 94 91 96"/></g><g class="pb-nose" style="transform-origin:60px 90px"><ellipse cx="60" cy="89" rx="4.6" ry="3.3" fill="#ff8fb5"/><path d="M60 92v4m0 0q-4 4-8 1m8-1q4 4 8 1" stroke="#c26a8c" stroke-width="1.4" fill="none" stroke-linecap="round"/></g></svg>';
+// The bunny peeks up from the bottom edge, twitches its nose, flicks an ear and hops off the nearer side
+function partyBunny(layer,delay=1200){
+  const vw=innerWidth,vh=innerHeight,w=Math.min(140,vw*.36),h=w*170/120,left=rand()<.5;
+  const x0=(left?vw*.22:vw*.78)-w/2,y0=vh-h*.84,dir=left?-1:1,dur=7000,b=partySprite(layer,BUNNY_SVG,w,h);
+  b.style.transformOrigin='50% 100%';
+  const at=(ms,x,y,sx=1,sy=1,e)=>Object.assign({transform:`translate(${x}px,${y}px) scale(${sx},${sy})`,offset:ms/dur},e?{easing:e}:{});
+  const fr=[at(0,x0,vh,1,1,'cubic-bezier(.2,.8,.3,1.2)'),at(900,x0,y0),at(2700,x0,y0),at(2950,x0,y0,1.08,.86)];
+  const hops=4,stepX=(dir>0?vw+w-x0:x0+w*1.4)/hops;
+  for(let i=0;i<hops;i++){
+    const t=2950+i*650,x=x0+dir*stepX*i;
+    fr.push(at(t+60,x,y0,.94,1.1,'ease-out'),at(t+330,x+dir*stepX/2,y0-70-rand()*30,.96,1.06,'ease-in'),at(t+600,x+dir*stepX,y0,1.08,.88));
+  }
+  fr.push(at(dur,x0+dir*stepX*hops,y0));
+  b.animate(fr,{duration:dur,delay,fill:'both'});
+  const nose=b.querySelector('.pb-nose'),ear=b.querySelector('.pb-ear-r');
+  nose?.animate([{transform:'scale(1,1)'},{transform:'scale(1.18,.72)'},{transform:'scale(1,1)'}],{duration:200,delay:delay+1100,iterations:6});
+  ear?.animate([{transform:'rotate(0)'},{transform:'rotate(-22deg)'},{transform:'rotate(0)'}],{duration:420,delay:delay+1900,easing:'ease-in-out'});
+}
+
 function runParty(k){
   if(!k||partyRan)return;partyRan=true;
   try{
@@ -1430,7 +1458,7 @@ function runParty(k){
       case 'bunting':{const nums=pickDistinct(rand,30,L.mainMax);pegDrop(layer,{n:30,size:30,make:i=>lottoBall(nums[i],30)});break}
       case 'xmas':pegDrop(layer,{n:56,size:18,stagger:4600,fall:3200,spin:40,make:i=>i%7===3?bauble(pick(['#ff4d5e','#33cc66','#f7c948','#2f86ff'])):SNOW_SVG});break;
       case 'newyear':fireworks(layer,{bursts:9,span:6000,colors:['#f7c948','#ffe48a','#fff'],balls:true});break;
-      case 'easter':pegDrop(layer,{n:26,size:30,spin:25,make:()=>{const c=pick([['#ffd1e8','#ff5fa8'],['#cfe8ff','#2f86ff'],['#d8ffe0','#33cc66'],['#fff2b8','#f7c948'],['#ead9ff','#a066ff']]);return eggSVG(c[0],c[1])}});break;
+      case 'easter':pegDrop(layer,{n:26,size:30,spin:25,make:()=>{const c=pick([['#ffd1e8','#ff5fa8'],['#cfe8ff','#2f86ff'],['#d8ffe0','#33cc66'],['#fff2b8','#f7c948'],['#ead9ff','#a066ff']]);return eggSVG(c[0],c[1])}});partyBunny(layer);break;
       case 'halloween':partyHalloween(layer);break;
       case 'bonfire':fireworks(layer,{bursts:10,span:6200,colors:['#f7c948','#ff5fa8','#a066ff','#ff8a1f','#ffe48a','#2f86ff']});break;
       case 'valentine':pegDrop(layer,{n:30,size:28,spin:20,make:()=>heartSVG(pick(['#ff4d6d','#ff5fa8','#ff9ad5','#f7c948','#d6336c']))});break;
