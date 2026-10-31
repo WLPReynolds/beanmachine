@@ -177,6 +177,23 @@ dialog.sheet h2{margin:0 0 14px;font-size:20px}
 .bm-wobble{transform-box:fill-box;transform-origin:50% 90%;animation:bmwob 3.2s ease-in-out infinite}
 @keyframes bmwob{0%,100%{transform:rotate(-8deg)}50%{transform:rotate(10deg) translateY(-2px)}}
 @media (prefers-reduced-motion:reduce){.bm-wobble{animation:none}}
+/* Party days */
+header.party-hdr{padding-top:calc(30px + env(safe-area-inset-top))}
+.bunting{position:absolute;left:0;right:0;top:env(safe-area-inset-top);height:20px;display:flex;justify-content:space-between;padding:0 4px;border-top:1.5px solid rgba(255,255,255,.35);pointer-events:none}
+.bunting i{width:16px;height:16px;clip-path:polygon(0 0,100% 0,50% 100%);transform-origin:50% 0;animation:sway 2.6s ease-in-out infinite;opacity:.95}
+@keyframes sway{50%{transform:rotate(7deg)}}
+.xlights{position:absolute;left:0;right:0;top:env(safe-area-inset-top);height:26px;pointer-events:none}
+.xlights svg{position:absolute;inset:0 0 6px;width:100%;height:20px}
+.xlights i{position:absolute;width:9px;height:11px;margin-left:-4.5px;border-radius:50% 50% 50% 50%/40% 40% 60% 60%;background:var(--c);box-shadow:0 0 8px 2px var(--c);animation:glow 1.5s ease-in-out infinite}
+@keyframes glow{50%{opacity:.35;box-shadow:none}}
+.party{position:fixed;inset:0;pointer-events:none;z-index:9999;overflow:hidden}
+.party-sp{position:absolute;left:0;top:0;will-change:transform,opacity}
+.party-sp .ball{display:grid}
+.party-spark{border-radius:50%;background:var(--c);box-shadow:0 0 8px 2px var(--c)}
+.party-pegs{position:absolute;left:0;top:0;fill:var(--gold2)}
+.party-wing{transform-box:fill-box;transform-origin:50% 45%;animation:flap .22s ease-in-out infinite alternate}
+@keyframes flap{to{transform:scaleY(.35)}}
+@media (prefers-reduced-motion:reduce){.bunting i,.xlights i{animation:none}}
 </style>
 </head>
 <body>
@@ -184,6 +201,6 @@ dialog.sheet h2{margin:0 0 14px;font-size:20px}
 <main id="view"></main>
 <nav id="nav"></nav>
 <div class="toast" id="toast"></div>
-<script src="src/app.js?v=1.2.14"></script>
+<script src="src/app.js?v=1.3.0"></script>
 </body>
 </html>

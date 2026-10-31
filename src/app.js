@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.2.14';
+const APP_VERSION='1.3.0';
 
 /* ---------- Game definitions ---------- */
 // "since" = first draw of the current format: Lotto went to 59 balls in Oct 2015; EuroMillions to 12 Lucky Stars in Sep 2016.
@@ -42,7 +42,7 @@ const money=j=>j==null?'':(j>=1e6?'£'+(+(j/1e6).toFixed(1))+'m':'£'+Math.round
 const rand=()=>crypto.getRandomValues(new Uint32Array(1))[0]/4294967296;
 function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
 function pickDistinct(rng,n,max,exclude=new Set()){const s=new Set();let guard=0;while(s.size<n&&guard++<10000){const x=1+Math.floor(rng()*max);if(!exclude.has(x))s.add(x)}return[...s].sort((a,b)=>a-b)}
-function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('show');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),2600)}
+function toast(msg,ms=2600){const t=$('#toast');t.textContent=msg;t.classList.add('show');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),ms)}
 const G=()=>GAMES[state.game];
 const dKey=d=>d.date+'|'+(d.round||'');
 const sortDraws=a=>a.sort((x,y)=>y.date.localeCompare(x.date)||String(y.round||'').localeCompare(String(x.round||'')));
@@ -524,7 +524,8 @@ function renderHeader(){
     else badge=`<span class="badge">Live · ${ds.length} draws${when?' · updated '+when:''}</span>`;
   }
   const sp=[[8,20,0],[78,14,.8],[90,52,1.6],[55,8,1.2],[30,60,2]].map(([l,t,d])=>`<i class="spark" style="left:${l}%;top:${t}px;animation-delay:${d}s"></i>`).join('');
-  $('#hdr').innerHTML=`${sp}<button class="hstory${state.view==='story'?' on':''}" data-view="story" aria-label="The story">📖 Story</button><h1>Bean Machine ✦</h1><div class="sub">Stats for fun — every line has the same chance</div>
+  const pk=partyToday(),deco=partyHeaderHTML(pk);$('#hdr').classList.toggle('party-hdr',!!deco);
+  $('#hdr').innerHTML=`${deco}${sp}<button class="hstory${state.view==='story'?' on':''}" data-view="story" aria-label="The story">📖 Story</button><h1>Bean Machine ✦</h1><div class="sub">Stats for fun — every line has the same chance</div>
   <div class="seg">${Object.values(GAMES).map(x=>`<button data-game="${x.key}" class="${x.key===g.key?'on':''}">${x.name}</button>`).join('')}</div>${badge}`;
 }
 function renderNav(){
@@ -1244,11 +1245,208 @@ function openInstallHelp(){
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();installPrompt=e;if(typeof render==='function')render()});
 window.addEventListener('appinstalled',()=>{installPrompt=null;render();toast('Installed ✨')});
 
+/* ---------- Party days: purely decorative, never load-bearing ---------- */
+// Bank holidays come from gov.uk's feed (England and Wales). Its "bunting" flag marks the celebratory
+// ones (Good Friday gets false). The rest are fixed dates, plus a record jackpot in the stored history.
+// The animation plays once per app open, on its own layer with pointer-events off, removes itself,
+// and can't break startup. Preview any of them with ?party=<key>, e.g. ?party=halloween.
+const PARTIES=['bunting','xmas','newyear','easter','halloween','bonfire','valentine','firstdraw','record'];
+const HOLS_URL='https://www.gov.uk/bank-holidays.json';
+const FIRST_DRAW={main:[3,5,14,22,30,44],bonus:10}; // Lotto, Sat 19 Nov 1994
+let partyRan=false;
+async function syncHolidays(){
+  if(typeof fetch!=='function'||partyPreview()==='none')return false;
+  if(LS.get('hols',null)&&Date.now()-LS.get('holsAt',0)<20*3600e3)return false; // once a day is plenty
+  try{
+    const r=await fetch(HOLS_URL);if(!r.ok)return false;
+    const j=await r.json(),from=iso(new Date(Date.now()-40*864e5));
+    const ev=(j['england-and-wales']?.events||[]).filter(e=>e&&e.date>=from)
+      .map(e=>({date:e.date,title:String(e.title||''),bunting:!!e.bunting}));
+    const before=JSON.stringify(LS.get('hols',[]));
+    LS.set('hols',ev);LS.set('holsAt',Date.now());
+    return before!==JSON.stringify(ev);
+  }catch(e){return false} // offline: the cached copy (or the fixed-date fallbacks) will do
+}
+function partyFor(d=new Date(),hols=LS.get('hols',[])){
+  const m=d.getMonth()+1,day=d.getDate(),h=(hols||[]).find(e=>e.date===iso(d));
+  if(h&&h.bunting){
+    if(/christmas|boxing/i.test(h.title))return 'xmas';
+    if(/new year/i.test(h.title))return 'newyear';
+    if(/easter/i.test(h.title))return 'easter';
+    return 'bunting';
+  }
+  if(m===12&&(day===25||day===26))return 'xmas'; // even when the bank holiday moves to a weekday
+  if(m===1&&day===1)return 'newyear';
+  if(m===10&&day===31)return 'halloween';
+  if(m===11&&day===5)return 'bonfire';
+  if(m===2&&day===14)return 'valentine';
+  if(m===11&&day===19)return 'firstdraw';
+  return null;
+}
+// The latest draw (within 3 days) has a bigger jackpot than any earlier draw in the stored history.
+// Needs 100+ earlier draws with a jackpot recorded, so gaps in imported history can't fake a record.
+function recordJackpot(now=new Date()){
+  if(settings.demo)return null;
+  for(const g of Object.values(GAMES)){
+    const ds=state.live[g.key]||[];
+    const last=ds.reduce((m,d)=>d.date>m?d.date:m,'');if(!last)continue;
+    const age=(now-new Date(last+'T12:00:00'))/864e5;if(age<0||age>3)continue;
+    const top=Math.max(0,...ds.filter(d=>d.date===last).map(d=>d.jackpot||0));
+    const earlier=ds.filter(d=>d.date<last&&d.jackpot>0);
+    if(top>0&&earlier.length>=100&&top>Math.max(...earlier.map(d=>d.jackpot)))return {g,jackpot:top};
+  }
+  return null;
+}
+// ?party=none turns it all off (the tests use it, so they don't depend on today's date or reach gov.uk)
+function partyPreview(){try{const p=new URLSearchParams(location.search).get('party');return p==='none'||PARTIES.includes(p)?p:null}catch(e){return null}}
+function partyToday(){try{const p=partyPreview();if(p)return p==='none'?null:p;return partyFor()||(recordJackpot()?'record':null)}catch(e){return null}}
+
+// Static header decorations (no motion needed, so these show with reduced motion too)
+const PARTY_FLAGS=['#f7c948','#ff5fa8','#a066ff','#2f86ff','#33cc66'];
+function partyHeaderHTML(k){
+  if(k==='bunting'||k==='newyear'||k==='easter'){
+    return `<div class="bunting" aria-hidden="true">${Array.from({length:22},(_,i)=>`<i style="background:${PARTY_FLAGS[i%5]};animation-delay:${(i%4)*.25}s"></i>`).join('')}</div>`;
+  }
+  if(k==='xmas'){
+    const n=13,cols=['#ff4d5e','#33cc66','#f7c948','#2f86ff','#f3f3f8'];
+    const bulbs=Array.from({length:n},(_,i)=>{const x=(i+.5)/n*100,y=6+Math.sin((i+.5)/n*Math.PI*3)**2*9;
+      return `<i style="left:${x}%;top:${y}px;--c:${cols[i%5]};animation-delay:${(i%3)*.5}s"></i>`}).join('');
+    return `<div class="xlights" aria-hidden="true"><svg viewBox="0 0 100 20" preserveAspectRatio="none"><path d="${Array.from({length:61},(_,i)=>`${i?'L':'M'}${i/60*100},${4+Math.sin(i/60*Math.PI*3)**2*9}`).join('')}" fill="none" stroke="#2d6b3a" stroke-width="1.4" vector-effect="non-scaling-stroke"/></svg>${bulbs}</div>`;
+  }
+  return '';
+}
+
+// ---- Animation helpers ----
+const PARTY_MSG={
+  bunting:"It's a bunting day. The odds haven't moved.",
+  xmas:'Merry Christmas. Every line still has the same chance.',
+  newyear:'Happy New Year. Same odds.',
+  easter:'Happy Easter. No egg is more likely than another.',
+  halloween:'Happy Halloween. No number is cursed.',
+  bonfire:'Remember, remember: every line has the same chance.',
+  valentine:"Happy Valentine's Day. The odds still don't love you.",
+  firstdraw:`On this day in 1994, the first UK Lotto draw: ${FIRST_DRAW.main.join(', ')}, bonus ${FIRST_DRAW.bonus}.`,
+};
+function partyLayer(ms){
+  const el=document.createElement('div');el.className='party';el.setAttribute('aria-hidden','true');
+  document.body.appendChild(el);
+  el.animate([{opacity:1},{opacity:1,offset:.9},{opacity:0}],{duration:ms,fill:'forwards'});
+  setTimeout(()=>el.remove(),ms+200);
+  return el;
+}
+function partySprite(layer,html,w,h=w){
+  const s=document.createElement('div');s.className='party-sp';s.style.width=w+'px';s.style.height=h+'px';
+  s.innerHTML=html;layer.appendChild(s);return s;
+}
+const PARTY_FLOOR=200; // px from the bottom: piles and pumpkins stay above the nav bar and the message
+const pick=a=>a[Math.floor(rand()*a.length)];
+const lottoBall=(n,s)=>`<span class="ball c${Math.floor(n/10)}" style="--s:${s}px"><b>${n}</b></span>`;
+const plainBall=(c,s)=>`<span class="ball ${c}" style="--s:${s}px"></span>`;
+
+// Things tumble through a Galton board of pegs and pile up in the bins, like the Story page.
+function pegDrop(layer,{n,size,make,spin=0,stagger=3200,fall=2400}){
+  const vw=innerWidth,vh=innerHeight,rows=9,dx=Math.min(40,(vw-32)/(rows+1)),cx=vw/2;
+  const top=Math.max(90,vh*.14),bot=vh-PARTY_FLOOR,dy=(bot-top-size*4)/rows;
+  const pegs=[];for(let r=0;r<rows;r++)for(let i=0;i<=r;i++)pegs.push(`<circle cx="${cx+(i-r/2)*dx}" cy="${top+r*dy+size*.5}" r="3"/>`);
+  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+  svg.setAttribute('class','party-pegs');svg.setAttribute('width',vw);svg.setAttribute('height',vh);svg.innerHTML=pegs.join('');
+  layer.appendChild(svg);
+  svg.animate([{opacity:0},{opacity:.45,offset:.12},{opacity:.45,offset:.8},{opacity:0}],{duration:stagger+fall+1500,fill:'forwards'});
+  const counts=Array(rows+1).fill(0);
+  for(let i=0;i<n;i++){
+    const path=galtonPath(rows,rand),k=path.filter(d=>d>0).length;
+    let s=0,rot=0;const at=(x,y,o,e='cubic-bezier(.45,0,.8,.55)')=>({transform:`translate(${x-size/2}px,${y-size}px) rotate(${rot}deg)`,offset:o,easing:e});
+    const fr=[at(cx,-size,0,'ease-in'),at(cx,top,.14)];
+    path.forEach((d,r)=>{s+=d;rot+=spin*d*(.6+rand()*.8);fr.push(at(cx+s*dx/2,top+(r+1)*dy,.14+(r+1)/rows*.66))});
+    const fy=bot-counts[k]++*size*.82;
+    fr.push(at(cx+s*dx/2,fy,.88,'ease-out'),at(cx+s*dx/2,fy-size*.35,.94,'ease-in'),at(cx+s*dx/2,fy,1));
+    const sp=partySprite(layer,make(i),size);
+    sp.animate(fr,{duration:fall+rand()*500,delay:i/n*stagger+rand()*150,fill:'both'});
+  }
+  return stagger+fall+500;
+}
+function fireworks(layer,{bursts,span,colors,balls=false}){
+  for(let b=0;b<bursts;b++)setTimeout(()=>firework(layer,colors,balls),b*span/bursts+rand()*250);
+}
+function firework(layer,colors,balls){
+  if(!layer.isConnected)return;
+  const vw=innerWidth,vh=innerHeight,x=vw*(.15+rand()*.7),y=vh*(.14+rand()*.32),col=pick(colors);
+  const rk=partySprite(layer,'',5,5);rk.className='party-sp party-spark';rk.style.setProperty('--c','#ffe48a');
+  const up=rk.animate([{transform:`translate(${x}px,${vh}px)`},{transform:`translate(${x}px,${y}px)`}],{duration:650+rand()*200,easing:'cubic-bezier(.2,.7,.4,1)',fill:'forwards'});
+  up.onfinish=()=>{
+    rk.remove();if(!layer.isConnected)return;
+    const n=balls?14:18,rad=70+rand()*60;
+    for(let p=0;p<n;p++){
+      const a=p/n*Math.PI*2,ox=Math.cos(a)*rad,oy=Math.sin(a)*rad,s=balls?14:6;
+      const c=balls?pick(['c1','c2','c3','c4','c5','c0']):'';
+      const el=partySprite(layer,balls?plainBall(c,s):'',s);
+      if(!balls){el.className='party-sp party-spark';el.style.setProperty('--c',p%3?col:pick(colors))}
+      el.animate([{transform:`translate(${x-s/2}px,${y-s/2}px) scale(.4)`,opacity:1},
+        {transform:`translate(${x+ox-s/2}px,${y+oy-s/2}px) scale(1)`,opacity:1,offset:.45,easing:'ease-in'},
+        {transform:`translate(${x+ox*1.15-s/2}px,${y+oy+90-s/2}px) scale(.8)`,opacity:0}],{duration:1500+rand()*400,easing:'ease-out',fill:'forwards'});
+    }
+  };
+}
+const GHOST_SVG='<svg viewBox="0 0 100 110" width="100%" height="100%"><defs><linearGradient id="pgGhost" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f4f2ea" stop-opacity=".75"/><stop offset=".6" stop-color="#e9ddff" stop-opacity=".5"/><stop offset="1" stop-color="#e9ddff" stop-opacity=".05"/></linearGradient></defs><path d="M50 6C22 6 8 28 8 55V95c0 5 6 6 9 2l7-9c2-3 6-3 8 0l6 8c2 3 6 3 8 0l4-6 4 6c2 3 6 3 8 0l6-8c2-3 6-3 8 0l7 9c3 4 9 3 9-2V55C92 28 78 6 50 6Z" fill="url(#pgGhost)"/><ellipse cx="36" cy="46" rx="6" ry="8" fill="#1a0b3d" opacity=".55"/><ellipse cx="64" cy="46" rx="6" ry="8" fill="#1a0b3d" opacity=".55"/><ellipse cx="50" cy="68" rx="7" ry="9" fill="#1a0b3d" opacity=".45"/></svg>';
+const PUMPKIN_SVG='<svg viewBox="0 0 100 100" width="100%" height="100%"><path d="M50 18c-4-10 2-15 9-14" stroke="#3f7a2a" stroke-width="6" fill="none" stroke-linecap="round"/><ellipse cx="50" cy="58" rx="46" ry="38" fill="#ff8a1f"/><ellipse cx="50" cy="58" rx="26" ry="38" fill="none" stroke="#d9640a" stroke-width="3"/><ellipse cx="50" cy="58" rx="9" ry="38" fill="none" stroke="#d9640a" stroke-width="3"/><path d="M28 48l9-12 9 12zM54 48l9-12 9 12z" fill="#3a1500"/><path d="M24 64q26 22 52 0l-7 3-5 6-6-5-7 6-6-6-7 5-5-6z" fill="#3a1500"/><ellipse cx="34" cy="40" rx="8" ry="5" fill="#fff" opacity=".25"/></svg>';
+const BAT_SVG='<svg viewBox="0 0 100 50" width="100%" height="100%"><g class="party-wing"><path d="M50 22C42 6 22 2 2 12c10 4 12 12 10 20 10-8 18-6 24 2 4-6 8-8 14-6 6-2 10 0 14 6 6-8 14-10 24-2-2-8 0-16 10-20C78 2 58 6 50 22Z" fill="#14081f"/></g><circle cx="46" cy="20" r="1.6" fill="#ffb648"/><circle cx="54" cy="20" r="1.6" fill="#ffb648"/></svg>';
+const heartSVG=c=>`<svg viewBox="0 0 100 92" width="100%" height="100%"><path d="M50 88C20 64 4 48 4 28 4 13 16 3 29 3c9 0 16 5 21 12C55 8 62 3 71 3c13 0 25 10 25 25 0 20-16 36-46 60Z" fill="${c}"/><ellipse cx="28" cy="24" rx="10" ry="6" fill="#fff" opacity=".35" transform="rotate(-30 28 24)"/></svg>`;
+const eggSVG=(c,s)=>`<svg viewBox="0 0 80 100" width="100%" height="100%"><path d="M40 2C18 2 4 40 4 62c0 21 16 36 36 36s36-15 36-36C76 40 62 2 40 2Z" fill="${c}"/><path d="M6 52l9-7 9 7 8-7 8 7 8-7 8 7 9-7 9 7" stroke="${s}" stroke-width="5" fill="none" stroke-linejoin="round"/><path d="M6 70h68" stroke="${s}" stroke-width="4" stroke-dasharray="2 8" stroke-linecap="round"/><ellipse cx="26" cy="30" rx="7" ry="12" fill="#fff" opacity=".35" transform="rotate(20 26 30)"/></svg>`;
+const SNOW_SVG='<svg viewBox="-10 -10 20 20" width="100%" height="100%"><g stroke="#fff" stroke-width="1.6" stroke-linecap="round"><path d="M0-9V9M-7.8-4.5 7.8 4.5M-7.8 4.5 7.8-4.5"/><path d="M-2-7 0-5 2-7M-2 7 0 5 2 7" fill="none"/></g></svg>';
+const bauble=c=>`<svg viewBox="0 0 40 46" width="100%" height="100%"><rect x="15" y="2" width="10" height="7" rx="2" fill="#d8b24a"/><circle cx="20" cy="27" r="18" fill="${c}"/><circle cx="13" cy="20" r="5" fill="#fff" opacity=".45"/></svg>`;
+
+function partyHalloween(layer){
+  const vw=innerWidth,vh=innerHeight;
+  // Ghost drifts across from one side to another
+  const gw=Math.max(150,Math.min(240,vw*.48)),gh=gw*1.1,ghost=partySprite(layer,GHOST_SVG,gw,gh);
+  const side=rand()<.5,ty=vh*(.15+rand()*.35);
+  ghost.animate([{transform:`translate(${side?-gw:vw}px,${ty}px) rotate(${side?8:-8}deg)`,opacity:0},
+    {opacity:1,offset:.12},{transform:`translate(${vw/2-gw/2}px,${ty-60}px) rotate(0deg)`,offset:.5},{opacity:1,offset:.85},
+    {transform:`translate(${side?vw:-gw}px,${ty+40}px) rotate(${side?-8:8}deg)`,opacity:0}],{duration:8000,easing:'ease-in-out',fill:'forwards'});
+  // Pumpkins roll along the bottom, like balls with faces
+  for(let i=0;i<4;i++){
+    const s=40+rand()*22,y=vh-PARTY_FLOOR-s,dir=i%2?-1:1,dist=vw+s*2,turns=dist/(Math.PI*s)*360;
+    const p=partySprite(layer,PUMPKIN_SVG,s);
+    p.animate([{transform:`translate(${dir>0?-s:vw}px,${y}px) rotate(0deg)`},{transform:`translate(${dir>0?vw:-s}px,${y}px) rotate(${dir*turns}deg)`}],
+      {duration:4200+rand()*1500,delay:600+i*1300,easing:'linear',fill:'both'});
+  }
+  // Bats flap across the top
+  for(let i=0;i<6;i++){
+    const w=36+rand()*26,y0=60+rand()*vh*.3,dir=rand()<.5?1:-1,b=partySprite(layer,BAT_SVG,w,w/2),fr=[];
+    for(let t=0;t<=8;t++){const x=dir>0?-w+(vw+w*2)*t/8:vw+w-(vw+w*2)*t/8;fr.push({transform:`translate(${x}px,${y0+Math.sin(t*1.4)*30}px) scaleX(${-dir})`})}
+    b.animate(fr,{duration:3500+rand()*2000,delay:rand()*4500,easing:'ease-in-out',fill:'both'});
+  }
+  return 9000;
+}
+
+function runParty(k){
+  if(!k||partyRan)return;partyRan=true;
+  try{
+    if(k==='record'){const r=recordJackpot();if(r)toast(`${r.g.name}: ${money(r.jackpot)}, the biggest jackpot in the stored history.`,5500)}
+    else if(PARTY_MSG[k])toast(PARTY_MSG[k],5500);
+    if(typeof document.body.animate!=='function'||window.matchMedia?.('(prefers-reduced-motion: reduce)').matches)return;
+    const L=GAMES.lotto,layer=partyLayer(10000);let n;
+    switch(k){
+      case 'bunting':{const nums=pickDistinct(rand,30,L.mainMax);pegDrop(layer,{n:30,size:30,make:i=>lottoBall(nums[i],30)});break}
+      case 'xmas':pegDrop(layer,{n:56,size:18,stagger:4600,fall:3200,spin:40,make:i=>i%7===3?bauble(pick(['#ff4d5e','#33cc66','#f7c948','#2f86ff'])):SNOW_SVG});break;
+      case 'newyear':fireworks(layer,{bursts:9,span:6000,colors:['#f7c948','#ffe48a','#fff'],balls:true});break;
+      case 'easter':pegDrop(layer,{n:26,size:30,spin:25,make:()=>{const c=pick([['#ffd1e8','#ff5fa8'],['#cfe8ff','#2f86ff'],['#d8ffe0','#33cc66'],['#fff2b8','#f7c948'],['#ead9ff','#a066ff']]);return eggSVG(c[0],c[1])}});break;
+      case 'halloween':partyHalloween(layer);break;
+      case 'bonfire':fireworks(layer,{bursts:10,span:6200,colors:['#f7c948','#ff5fa8','#a066ff','#ff8a1f','#ffe48a','#2f86ff']});break;
+      case 'valentine':pegDrop(layer,{n:30,size:28,spin:20,make:()=>heartSVG(pick(['#ff4d6d','#ff5fa8','#ff9ad5','#f7c948','#d6336c']))});break;
+      case 'firstdraw':n=[...FIRST_DRAW.main,FIRST_DRAW.bonus];pegDrop(layer,{n:7,size:40,stagger:3000,make:i=>lottoBall(n[i],40)});break;
+      case 'record':pegDrop(layer,{n:36,size:24,make:()=>plainBall('c4',24)});fireworks(layer,{bursts:4,span:4000,colors:['#f7c948','#ffe48a'],balls:false});break;
+    }
+  }catch(e){/* decorative only */}
+}
+
 /* ---------- Boot ---------- */
 (async()=>{
   await DB.open();
   for(const k of Object.keys(GAMES))state.live[k]=(await DB.get('draws_'+k))||[];
   render();
+  runParty(partyToday());
+  syncHolidays().then(ch=>{if(ch){render();runParty(partyToday())}});
   maybeAutoSync();
   document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')maybeAutoSync()});
   window.addEventListener('online',()=>maybeAutoSync()); // signal back: try again straight away

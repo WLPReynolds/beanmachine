@@ -4,14 +4,14 @@ const fs = require('fs');
 const path = require('path');
 const { JSDOM, VirtualConsole } = require('jsdom');
 
-function loadApp({ settings, stats = true } = {}) {
+function loadApp({ settings, stats = true, url = 'https://lottolab.test/?party=none' } = {}) {
   const root = path.join(__dirname, '..');
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8').replace(/<script src="src\/app\.js[^"]*"><\/script>/, '');
   const js = fs.readFileSync(path.join(root, 'src/app.js'), 'utf8');
   const errors = [];
   const vc = new VirtualConsole();
   vc.on('jsdomError', e => { if (!/Not implemented/.test(e.message)) errors.push(e); });
-  const dom = new JSDOM(html, { url: 'https://lottolab.test/', runScripts: 'dangerously', pretendToBeVisual: true, virtualConsole: vc });
+  const dom = new JSDOM(html, { url, runScripts: 'dangerously', pretendToBeVisual: true, virtualConsole: vc });
   const w = dom.window;
   w.scrollTo = () => {};
   // No real animation frames in tests: a running loop would keep the test process alive.
