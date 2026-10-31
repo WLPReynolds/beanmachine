@@ -118,3 +118,25 @@ test('the gov.uk feed is stored (England and Wales, recent dates only) and fetch
   assert.equal(await a.get('syncHolidays()'), false);
   assert.equal(calls.filter(u => /gov\.uk/.test(u)).length, 1);
 });
+
+test('Easter Sunday is worked out for any year, and Sunday and Monday are both Easter', () => {
+  const es = y => app.get(`iso(easterSunday(${y}))`);
+  assert.equal(es(2026), '2026-04-05');
+  assert.equal(es(2027), '2027-03-28');
+  assert.equal(es(2028), '2028-04-16');
+  assert.equal(es(2038), '2038-04-25'); // latest possible
+  assert.equal(on('2027-03-28'), 'easter');
+  assert.equal(on('2027-03-29'), 'easter'); // Monday, before gov.uk's feed has loaded
+  assert.equal(on('2027-03-26'), null);     // Good Friday
+  assert.equal(on('2027-03-27'), null);
+});
+
+test('the page is marked with the party, so the balls become pumpkins or eggs', () => {
+  const root = app.window.document.documentElement;
+  app.get('var _pt=partyToday; partyToday=()=>"halloween"; renderHeader();');
+  assert.equal(root.dataset.party, 'halloween');
+  app.get('partyToday=()=>"easter"; renderHeader();');
+  assert.equal(root.dataset.party, 'easter');
+  app.get('partyToday=_pt; renderHeader();');
+  assert.equal(root.dataset.party, '');
+});
