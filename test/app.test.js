@@ -671,3 +671,55 @@ test('simulator end message counts jackpots won along the way (after Keep going)
   const t = doc.querySelector('#simstat').textContent;
   assert.ok(t.includes('3 jackpots in') && !t.includes('No jackpot'), t);
 });
+
+/* ---------- Simulator calendar ---------- */
+test('civilFromDays matches the real calendar, and keeps going past the year 275,760', () => {
+  const civ = fn('civilFromDays');
+  for (const iso of ['1970-01-01', '2000-02-29', '2026-10-31', '2100-03-01', '9999-12-31']) {
+    const [y, m, d] = iso.split('-').map(Number);
+    assert.deepEqual({ ...civ(Date.UTC(y, m - 1, d) / 864e5) }, { y, m, d }, iso);
+  }
+  // 400 Gregorian years are exactly 146,097 days, so a million-year jump lands on the same month and day
+  const z = Date.UTC(2026, 9, 31) / 864e5;
+  assert.deepEqual({ ...civ(z + 2500 * 146097) }, { y: 1002026, m: 10, d: 31 });
+});
+
+test('simulated draws follow the real draw days from the next draw', () => {
+  const s = app.get("sim=simNew(GAMES.lotto,[1,2,3,4,5,6],[],[]); sim");
+  const first = app.get("upcomingDates(GAMES.lotto,1)[0]");
+  const iso = n => new Date(app.get(`simDay(sim,${n})`) * 864e5).toISOString().slice(0, 10);
+  assert.equal(iso(1), first);
+  const days = [1, 2, 3, 4, 5].map(n => new Date(iso(n)).getUTCDay());
+  assert.ok(days.every(d => d === 3 || d === 6), String(days)); // Wednesdays and Saturdays
+  assert.ok(days[0] !== days[1] && days[0] === days[2]);
+  assert.equal(app.get(`simDay(sim,3)`) - app.get(`simDay(sim,1)`), 7);
+  assert.match(app.get("simDate(sim,1)"), /^(Wed|Sat) \d+ [A-Z][a-z]{2} \d{4}$/);
+  const em = app.get("simNew(GAMES.euromillions,[1,2,3,4,5],[1,2],[])");
+  app.get("sim=simNew(GAMES.euromillions,[1,2,3,4,5],[1,2],[])");
+  assert.ok([1, 2, 3, 4].map(n => new Date(iso(n)).getUTCDay()).every(d => d === 2 || d === 5)); // Tuesdays and Fridays
+});
+
+test('simulator keeps the first closest call, and shows it when there is no jackpot', () => {
+  const doc = app.window.document;
+  app.get("state.game='lotto'; state.view='check'; state.pick={main:new Set([7,8,9,10,11,12]),extra:new Set()}; sim=null; state.simYi=2; render(); simStep(sim,1e6); simPaint(sim);");
+  const s = app.get('sim');
+  if (s.jacks.length) return; // vanishingly unlikely in 5 years
+  assert.ok(s.best && s.best.m >= 2, JSON.stringify(s.best));
+  const v = doc.querySelector('#simballs').textContent;
+  assert.ok(v.includes('No jackpot. Closest') && v.includes('First on'), v);
+  assert.ok(v.includes(app.get('simWhen(sim,sim.best)')));
+});
+
+test('simulator records every jackpot date and shows the jackpot line at the end', () => {
+  const doc = app.window.document;
+  app.get("state.game='lotto'; state.view='check'; state.pick={main:new Set([7,8,9,10,11,12]),extra:new Set()}; sim=null; state.simYi=0; render();");
+  app.get("sim.line.fill(1); simStep(sim,10); simPaint(sim);"); // every ball matches, so both rounds of draw 1 are jackpots
+  assert.equal(app.get('sim.n'), 1);
+  assert.equal(app.get('sim.jacks.length'), 2);
+  assert.ok(doc.querySelector('#simstat').textContent.includes(app.get('simDate(sim,1)')));
+  app.get("sim.hit=null; simStep(sim,3); simPaint(sim);"); // Keep going: stops again after draw 2
+  assert.equal(app.get('sim.jacks.length'), 4);
+  const v = doc.querySelector('#simballs').textContent;
+  assert.ok(v.includes('Your jackpot line') && v.includes('Won 4 times') && v.includes('(Round 2)'), v);
+  assert.equal(app.errors.length, 0, app.errors.map(e => e.message).join('\n'));
+});
