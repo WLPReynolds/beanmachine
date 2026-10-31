@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.2.13';
+const APP_VERSION='1.2.14';
 
 /* ---------- Game definitions ---------- */
 // "since" = first draw of the current format: Lotto went to 59 balls in Oct 2015; EuroMillions to 12 Lucky Stars in Sep 2016.
@@ -629,7 +629,7 @@ function simCal(g){
   return{start,g1:(other-w+7)%7||7};
 }
 const simDay=(s,n)=>s.cal.start+Math.floor((n-1)/2)*7+((n-1)%2?s.cal.g1:0);
-function simDate(s,n){const z=simDay(s,Math.max(1,n)),c=civilFromDays(z);return `${SIM_DOW[((z%7)+7+4)%7]} ${c.d} ${SIM_MON[c.m-1]} ${c.y<10000?c.y:fmtN(c.y)}`}
+function simDate(s,n){const z=simDay(s,Math.max(1,n)),c=civilFromDays(z);return `${SIM_DOW[((z%7)+7+4)%7]} ${c.d} ${SIM_MON[c.m-1]} ${c.y<10000?c.y:'in the year '+c.y}`}
 const simWhen=(s,j)=>simDate(s,j.n)+(j.round?` (Round ${j.round})`:'');
 // How good a match is, so the closest call can be kept: Lotto 5+bonus beats 5; EuroMillions follows the prize tiers
 const SIM_EM_ORDER=[...EM_WIN];
@@ -678,10 +678,10 @@ function simBalls(s){
     const mk=(n,isX)=>(isX&&g.sepPool?s.lx[n]:s.line[n])?'simhit':'';
     if(s.jacks.length){const d=s.jackDraw,J=s.jacks,show=J.slice(0,12);
       return `<div class="simend"><div class="small" style="font-weight:800;color:var(--gold2)">🏆 Your jackpot line</div>${rowBalls(g,srt(d.main),srt(d.extra),{fit:'fit',mark:mk})}
-      <div class="small">${J.length===1?'Won on':`Won ${fmtN(J.length)} times:`} ${show.map(j=>`<b>${simWhen(s,j)}</b>`).join(' · ')}${J.length>show.length?` · and ${fmtN(J.length-show.length)} more`:''}</div></div>`}
+      <div class="small simdates"><div>${J.length===1?'Won on':`Won ${fmtN(J.length)} times:`}</div>${show.map(j=>`<b>${simWhen(s,j)}</b>`).join('')}${J.length>show.length?`<div>and ${fmtN(J.length-show.length)} more</div>`:''}</div></div>`}
     const b=s.best;if(b){const lbl=g.sepPool?`${b.m} + ${b.e}★`:b.m===5&&b.e?'5 + bonus':`${b.m}`;
       return `<div class="simend"><div class="small" style="font-weight:800">No jackpot. Closest: ${lbl}</div>${rowBalls(g,srt(b.main),srt(b.extra),{fit:'fit',mark:mk})}
-      <div class="small">First on <b>${simWhen(s,b)}</b></div></div>`}
+      <div class="small simdates"><div>First on</div><b>${simWhen(s,b)}</b></div></div>`}
   }
   if(!s.last)return `<div class="muted small" style="min-height:44px;display:flex;align-items:center">Balls appear here once it starts.</div>`;
   const mk=(n,isX)=>(isX&&g.sepPool?s.lx[n]:s.line[n])?'simhit':'';
