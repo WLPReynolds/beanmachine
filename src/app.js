@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.3.1';
+const APP_VERSION='1.3.2';
 
 /* ---------- Game definitions ---------- */
 // "since" = first draw of the current format: Lotto went to 59 balls in Oct 2015; EuroMillions to 12 Lucky Stars in Sep 2016.
@@ -344,24 +344,24 @@ function prizeFor(g,d,k){
   if(!g.sepPool){if(k==='6+0')return{amount:d.jackpot,known:false,jackpot:true};return LOTTO_FIXED[k]?{amount:LOTTO_FIXED[k],known:true}:null}
   return EM_WIN.has(k)?{amount:null,known:false,jackpot:k==='5+2'}:null;
 }
-// Result of one locked entry on one date (null until every round of that draw is stored)
-function entryResult(g,t,date){
+// Every distinct line locked in for a date, in the order it was locked (the same numbers locked twice count once)
+function linesForDate(g,date){const out=[];tickets[g.key].forEach(t=>{if(t.dates.includes(date))t.lines.forEach(l=>{if(!out.some(x=>sameLine(x,l)))out.push(l)})});return out}
+// Result of a set of lines on one date (null until every round of that draw is stored)
+function entryResult(g,t,date){return linesResult(g,t.lines,date)}
+function linesResult(g,lines,date){
   if(!isDrawn(g,date))return null;
   const rs=liveFor(g,date).sort((a,b)=>String(a.round||'').localeCompare(String(b.round||''))),wins=[];
-  t.lines.forEach((l,li)=>rs.forEach(d=>{
+  lines.forEach((l,li)=>rs.forEach(d=>{
     const m=inter(l.main,d.main),st=g.sepPool?inter(l.extra,d.extra):(m===5&&d.extra.some(x=>l.main.includes(x))?1:0);
-    const pr=prizeFor(g,d,m+'+'+st);if(pr)wins.push({li,round:d.round,m,st,...pr});
+    const pr=prizeFor(g,d,m+'+'+st);if(pr)wins.push({li,lineNo:li+1,line:l,round:d.round,m,st,...pr});
   }));
   return{wins,total:wins.reduce((a,w)=>a+(w.known?w.amount:0),0),unknown:wins.some(w=>!w.known)};
 }
 const winTxt=(g,w)=>`${w.m}${g.sepPool?(w.st?` + ${w.st}★`:''):(w.st?' + Bonus':'')}`;
 // Every drawn (game, date) you had entries for, combined across entries
 function resultsByDate(g){
-  const map={};
-  tickets[g.key].forEach(t=>t.dates.forEach(dt=>{const r=entryResult(g,t,dt);if(!r)return;
-    const e=map[dt]||(map[dt]={date:dt,lines:0,wins:[],total:0,unknown:false});
-    e.lines+=t.lines.length;r.wins.forEach(w=>e.wins.push({...w,lineNo:e.lines-t.lines.length+w.li+1}));e.total+=r.total;e.unknown=e.unknown||r.unknown}));
-  return Object.values(map).sort((a,b)=>b.date.localeCompare(a.date));
+  const dates=new Set();tickets[g.key].forEach(t=>t.dates.forEach(dt=>dates.add(dt)));
+  return [...dates].map(dt=>{const L=linesForDate(g,dt),r=linesResult(g,L,dt);return r&&{date:dt,lines:L.length,...r}}).filter(Boolean).sort((a,b)=>b.date.localeCompare(a.date));
 }
 const moneyWin=v=>v>=1e6?money(v):'£'+(v%1?v.toFixed(2):Math.round(v).toLocaleString('en-GB'));
 function bannerHTML(){
@@ -375,7 +375,7 @@ function bannerHTML(){
     const amt=r.total>0?moneyWin(r.total)+(r.unknown?' + more to come':''):'a prize';
     h+=`<div class="banner">${conf}<button class="x" data-act="seen" data-k="${k}">✕</button><h2>${jp?'🤯 JACKPOT!':'🎉 You won '+amt+'!'}</h2>
       <div class="small">${g.name}, ${fmtDate(r.date)}</div>
-      <ul class="r">${r.wins.map(w=>`<li>Line ${w.lineNo}${w.round?`, ${w.round}`:''}: matched ${winTxt(g,w)} — <b>${w.known?moneyWin(w.amount):'amount to follow'}</b></li>`).join('')}</ul>
+      <ul class="r">${r.wins.map(w=>`<li>${w.round?`${w.round}: `:''}matched ${winTxt(g,w)} — <b>${w.known?moneyWin(w.amount):'amount to follow'}</b>${rowBalls(g,w.line.main,w.line.extra,{fit:'fit'})}</li>`).join('')}</ul>
       ${r.unknown?`<div class="note">EuroMillions prizes are shared out, so some amounts appear once the prize breakdown is published.</div>`:''}</div>`;
   }
   return h;
@@ -840,24 +840,30 @@ function viewLines(){
   h+=`<div class="note">Replacements come from the least-drawn numbers across the ${ds.length} draws stored so far${settings.freePlan?' — this pool gets more meaningful as history builds up':''}.</div>`;
   return h+viewGen(true);
 }
+// Is this line already locked in for every one of these dates?
+function alreadyIn(g,l,dates){return dates.size>0&&[...dates].every(dt=>linesForDate(g,dt).some(x=>sameLine(x,l)))}
+// The ticked lines that aren't already locked for every chosen draw
+function lockable(g,lk){const L=myLines[g.key];return [...lk.sel].filter(i=>L[i]&&!alreadyIn(g,L[i],lk.dates)).sort((x,y)=>x-y)}
 function lockPanel(g){
-  const L=myLines[g.key],up=upcomingDates(g),lk=state.lock;
+  const L=myLines[g.key],up=upcomingDates(g),lk=state.lock,n=lockable(g,lk).length;
   return `<div class="card" style="border-color:var(--gold)"><h2>🔒 Lock in lines</h2><p class="small muted" style="margin-top:0">Tick the lines you've bought and the draws they're for. Locked lines can't be changed until their draws have happened; you can still add more.</p>
-  <h3>Lines</h3>${L.map((l,i)=>`<div class="chk ${lk.sel.has(i)?'on':''}" data-act="locksel" data-i="${i}"><span class="box">${lk.sel.has(i)?'✓':''}</span><b class="small" style="width:44px">Line ${i+1}</b>${rowBalls(g,l.main,l.extra,{fit:'fit'})}</div>`).join('')}
+  <h3>Lines</h3>${L.map((l,i)=>alreadyIn(g,l,lk.dates)?`<div class="chk in"><span class="box">🔒</span><b class="small" style="width:44px">Line ${i+1}</b>${rowBalls(g,l.main,l.extra,{fit:'fit'})}</div>`:`<div class="chk ${lk.sel.has(i)?'on':''}" data-act="locksel" data-i="${i}"><span class="box">${lk.sel.has(i)?'✓':''}</span><b class="small" style="width:44px">Line ${i+1}</b>${rowBalls(g,l.main,l.extra,{fit:'fit'})}</div>`).join('')}
+  ${L.some(l=>alreadyIn(g,l,lk.dates))?`<div class="note">🔒 = already locked in for ${lk.dates.size>1?'these draws':'this draw'}. New lines are added alongside them.</div>`:''}
   <h3>Draws</h3><div class="chips">${up.map(dt=>`<button class="chip ${lk.dates.has(dt)?'on':''}" data-act="lockdate" data-d="${dt}">${shortDate(dt)}</button>`).join('')}</div>
   <div class="note">Away for a while? Tick every draw until you're back.</div>
-  <div class="row" style="margin-top:12px"><button class="btn" data-act="lockgo">Lock in ${lk.sel.size} line${lk.sel.size===1?'':'s'} × ${lk.dates.size} draw${lk.dates.size===1?'':'s'}</button><button class="btn ghost" data-act="lockcancel">Cancel</button></div></div>`;
+  <div class="row" style="margin-top:12px"><button class="btn" data-act="lockgo">Add ${n} line${n===1?'':'s'} × ${lk.dates.size} draw${lk.dates.size===1?'':'s'}</button><button class="btn ghost" data-act="lockcancel">Cancel</button></div></div>`;
 }
 function entriesCard(g){
   const T=tickets[g.key];if(!T.length)return '';
   const pend={};T.forEach(t=>t.dates.forEach(dt=>{if(!isDrawn(g,dt))(pend[dt]=pend[dt]||[]).push(t)}));
   const pd=Object.keys(pend).sort();
   let h=`<div class="card"><h2>🎟️ My entries</h2>`;
-  if(pd.length)h+=`<h3>Coming up</h3>`+pd.map(dt=>`<div class="ent"><div class="eh"><span>${shortDate(dt)}</span>${stillOpen(dt)?'':'<span class="muted small">waiting for results</span>'}</div>${pend[dt].map(t=>{
-      const canUndo=t.dates.every(stillOpen);
-      return t.lines.map(l=>`<div class="rr">${rowBalls(g,l.main,l.extra,{fit:'fit'})}</div>`).join('')+(canUndo?`<button class="ibtn" style="margin:2px 0 6px" data-act="delticket" data-id="${t.id}">Undo this lock${t.dates.length>1?` (all ${t.dates.length} draws)`:''}</button>`:'')}).join('')}</div>`).join('');
+  if(pd.length)h+=`<h3>Coming up</h3>`+pd.map(dt=>{const shown=[];return `<div class="ent"><div class="eh"><span>${shortDate(dt)}</span>${stillOpen(dt)?'':'<span class="muted small">waiting for results</span>'}</div>${pend[dt].map(t=>{
+      const canUndo=t.dates.every(stillOpen),fresh=t.lines.filter(l=>!shown.some(x=>sameLine(x,l)));shown.push(...fresh);
+      if(!fresh.length)return '';
+      return fresh.map(l=>`<div class="rr">${rowBalls(g,l.main,l.extra,{fit:'fit'})}</div>`).join('')+(canUndo?`<button class="ibtn" style="margin:2px 0 6px" data-act="delticket" data-id="${t.id}">Undo ${t.lines.length>1?`these ${t.lines.length} lines`:'this line'}${t.dates.length>1?` (all ${t.dates.length} draws)`:''}</button>`:'')}).join('')}</div>`}).join('');
   const past=resultsByDate(g).slice(0,8);
-  if(past.length)h+=`<h3>Results</h3>`+past.map(r=>`<div class="ent"><div class="eh"><span>${shortDate(r.date)}</span><span class="${r.wins.length?'won':'muted small'}">${r.wins.length?(r.total>0?moneyWin(r.total):'')+(r.unknown?(r.total>0?' + ':'')+'amount to follow':''):'No win'}</span></div>${r.wins.map(w=>`<div class="small">Line ${w.lineNo}${w.round?`, ${w.round}`:''}: matched ${winTxt(g,w)}${w.known?` — ${moneyWin(w.amount)}`:''}</div>`).join('')}</div>`).join('');
+  if(past.length)h+=`<h3>Results</h3>`+past.map(r=>`<div class="ent"><div class="eh"><span>${shortDate(r.date)}</span><span class="${r.wins.length?'won':'muted small'}">${r.wins.length?(r.total>0?moneyWin(r.total):'')+(r.unknown?(r.total>0?' + ':'')+'amount to follow':''):'No win'}</span></div>${r.wins.map(w=>`<div class="win"><div class="small">${w.round?`${w.round}: `:''}matched ${winTxt(g,w)}${w.known?` — ${moneyWin(w.amount)}`:''}</div>${rowBalls(g,w.line.main,w.line.extra,{fit:'fit'})}</div>`).join('')}</div>`).join('');
   return h+`</div>`;
 }
 function viewGen(embedded){
@@ -1153,13 +1159,16 @@ document.addEventListener('click',async e=>{
     if(a==='spin'){state.gen=Array.from({length:settings.genLines},()=>({...generate(g,ds),fresh:true}))}
     if(a==='checkgen'){const l=state.gen[+t.dataset.i];state.pick={main:new Set(l.main),extra:new Set(l.extra)};state.view='check';render();setTimeout(()=>document.querySelectorAll('.card')[1]?.scrollIntoView({behavior:'smooth'}),50);return}
     const L=myLines[g.key],li=+t.dataset.i,toCheck=()=>{state.view='check';render();scrollTo(0,0)};
-    if(a==='lockopen'){const up=upcomingDates(g);state.lock={sel:new Set(L.map((_,i)=>i)),dates:new Set(up.slice(0,1))};render();scrollTo(0,0);return}
+    if(a==='lockopen'){const up=upcomingDates(g),ds=new Set(up.slice(0,1));state.lock={sel:new Set(L.map((_,i)=>i).filter(i=>!alreadyIn(g,L[i],ds))),dates:ds};render();scrollTo(0,0);return}
     if(a==='lockcancel')state.lock=null;
     if(a==='locksel'){state.lock.sel.has(li)?state.lock.sel.delete(li):state.lock.sel.add(li);const y=scrollY;render();scrollTo(0,y);return}
     if(a==='lockdate'){const d=t.dataset.d;state.lock.dates.has(d)?state.lock.dates.delete(d):state.lock.dates.add(d);const y=scrollY;render();scrollTo(0,y);return}
-    if(a==='lockgo'){const lk=state.lock;if(!lk.sel.size||!lk.dates.size){toast('Pick at least one line and one draw');return}
-      tickets[g.key].push({id:Date.now().toString(36)+Math.random().toString(36).slice(2,6),lines:[...lk.sel].sort((x,y)=>x-y).map(i=>({main:[...L[i].main],extra:[...(L[i].extra||[])]})),dates:[...lk.dates].sort(),at:new Date().toISOString()});
-      saveTickets();state.lock=null;toast(`🔒 Locked in for ${[...lk.dates].sort().map(shortDate).join(', ')}`)}
+    if(a==='lockgo'){const lk=state.lock,idx=lockable(g,lk);if(!idx.length||!lk.dates.size){toast('Pick at least one new line and one draw');return}
+      const groups=new Map();
+      [...lk.dates].sort().forEach(dt=>{const have=linesForDate(g,dt),add=idx.filter(i=>!have.some(x=>sameLine(x,L[i])));if(!add.length)return;
+        const k=add.join(',');(groups.get(k)||groups.set(k,{add,dates:[]}).get(k)).dates.push(dt)});
+      groups.forEach(({add,dates})=>tickets[g.key].push({id:Date.now().toString(36)+Math.random().toString(36).slice(2,6),lines:add.map(i=>({main:[...L[i].main],extra:[...(L[i].extra||[])]})),dates,at:new Date().toISOString()}));
+      saveTickets();state.lock=null;toast(`🔒 Added ${idx.length} line${idx.length===1?'':'s'} for ${[...lk.dates].sort().map(shortDate).join(', ')}`)}
     if(a==='delticket'){const T=tickets[g.key],ix=T.findIndex(x=>x.id===t.dataset.id);
       if(ix>=0&&T[ix].dates.every(stillOpen)&&confirm('Undo this lock? Use this only if you locked something by mistake.')){T.splice(ix,1);saveTickets();toast('Lock removed')}}
     if(a==='seen'){seen.add(t.dataset.k);saveSeen()}

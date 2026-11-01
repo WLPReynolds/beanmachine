@@ -725,3 +725,52 @@ test('simulator records every jackpot date and shows the jackpot line at the end
   assert.ok(v.includes('Your jackpot line') && v.includes('Won 4 times') && v.includes('(Round 2)'), v);
   assert.equal(app.errors.length, 0, app.errors.map(e => e.message).join('\n'));
 });
+
+// Wayne, 31 Oct 2026: bought 2 lines and locked them, then a 3rd, then his parents' line.
+// Each lock used to re-copy every line, so results showed Lines 1–9 and counted wins twice.
+const A = { main: [1, 2, 3, 4, 5, 6], extra: [] }, B = { main: [10, 11, 12, 13, 14, 15], extra: [] },
+  C = { main: [20, 21, 22, 23, 24, 25], extra: [] }, D = { main: [30, 31, 32, 33, 34, 35], extra: [] };
+const sat = { date: '2026-10-31', jackpot: null, prizes: null, extra: [49] };
+function satDraws(a) {
+  a.get('state').live.lotto = [
+    { ...sat, round: 'Round 1', main: [1, 2, 30, 31, 40, 41] }, // A matches 2, D matches 2
+    { ...sat, round: 'Round 2', main: [1, 2, 10, 11, 12, 42] }, // A matches 2, B matches 3
+  ];
+}
+
+test('results count each locked line once, even if it was locked more than once', () => {
+  const a = loadApp();
+  satDraws(a);
+  a.get('tickets').lotto.push(
+    { id: 't1', lines: [A, C], dates: ['2026-10-31'] },
+    { id: 't2', lines: [A, C, B], dates: ['2026-10-31'] },
+    { id: 't3', lines: [A, C, B, D], dates: ['2026-10-31'] });
+  const [r] = a.window.resultsByDate(a.get('GAMES.lotto'));
+  assert.equal(r.lines, 4);
+  assert.equal(r.total, 13); // £1 + £1 for A, £10 for B, £1 for D — not £27
+  assert.equal(r.wins.length, 4);
+});
+
+test('locking again only adds the new lines, and the old ones show as already in', () => {
+  const a = loadApp();
+  const L = a.get('myLines').lotto, T = a.get('tickets').lotto, g = a.get('GAMES.lotto');
+  const next = a.window.upcomingDates(g)[0];
+  L.splice(0, L.length, A, C);
+  const lock = () => {
+    a.get('state').view = 'gen'; a.window.render();
+    a.window.document.querySelector('[data-act="lockopen"]').click();
+    a.window.document.querySelector('[data-act="lockgo"]').click();
+  };
+  lock();
+  assert.equal(T.length, 1);
+  L.push(B); lock();
+  assert.equal(T.length, 2);
+  assert.equal(JSON.stringify(T[1].lines.map(l => l.main)), JSON.stringify([B.main]));
+  // Nothing new: the panel shows every line as already in, and locking adds nothing
+  a.get('state').view = 'gen'; a.window.render();
+  a.window.document.querySelector('[data-act="lockopen"]').click();
+  assert.equal(a.window.document.querySelectorAll('.chk.in').length, 3);
+  a.window.document.querySelector('[data-act="lockgo"]').click();
+  assert.equal(T.length, 2);
+  assert.equal(a.window.linesForDate(g, next).length, 3);
+});
