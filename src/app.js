@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.3.2';
+const APP_VERSION='1.3.3';
 
 /* ---------- Game definitions ---------- */
 // "since" = first draw of the current format: Lotto went to 59 balls in Oct 2015; EuroMillions to 12 Lucky Stars in Sep 2016.
@@ -45,7 +45,22 @@ function pickDistinct(rng,n,max,exclude=new Set()){const s=new Set();let guard=0
 function toast(msg,ms=2600){const t=$('#toast');t.textContent=msg;t.classList.add('show');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),ms)}
 const G=()=>GAMES[state.game];
 const dKey=d=>d.date+'|'+(d.round||'');
-const sortDraws=a=>a.sort((x,y)=>y.date.localeCompare(x.date)||String(y.round||'').localeCompare(String(x.round||'')));
+// From 31 Oct 2026 the feed sometimes gives Lotto's Round 1 both rounds' breakdowns ("Match 5 + Bonus (Round 2)", …,
+// plus a "Totals" row). Keep only this round's rows, in the usual wording. Usual-format rows pass through untouched.
+// The Worker does the same (tidyPrizes in lotto-worker.js); this repairs draws already on the phone.
+const ROUND_TAG=/\s*\((Round \d+)\)\s*$/i;
+function tidyPrizes(prizes,round){
+  if(!Array.isArray(prizes))return prizes??null;
+  if(!prizes.some(x=>ROUND_TAG.test(x.t)||/^\s*totals?\s*$/i.test(x.t)||/\s\+\s/.test(x.t)))return prizes;
+  const out=[];
+  for(const x of prizes){let t=String(x.t??'');const m=ROUND_TAG.exec(t);
+    if(m){if(!round||m[1].toLowerCase()!==String(round).toLowerCase())continue;t=t.replace(ROUND_TAG,'')}
+    if(/^\s*totals?\s*$/i.test(t))continue;
+    out.push({...x,t:t.replace(/\s\+\s/,' plus ')})}
+  return out.length?out:null;
+}
+const tidyDraw=d=>{if(d&&d.prizes)d.prizes=tidyPrizes(d.prizes,d.round);return d};
+const sortDraws=a=>a.map(tidyDraw).sort((x,y)=>y.date.localeCompare(x.date)||String(y.round||'').localeCompare(String(x.round||'')));
 const rTag=d=>d.round?` <span class="pill" style="background:rgba(255,255,255,.12);color:var(--muted)">${String(d.round).replace('Round ','R')}</span>`:'';
 // Every round on the most recent draw date (Lotto has two rounds per draw since June 2026)
 const lastSet=ds=>ds.length?ds.filter(d=>d.date===ds[0].date):[];
@@ -1480,7 +1495,7 @@ function runParty(k){
 /* ---------- Boot ---------- */
 (async()=>{
   await DB.open();
-  for(const k of Object.keys(GAMES))state.live[k]=(await DB.get('draws_'+k))||[];
+  for(const k of Object.keys(GAMES))state.live[k]=sortDraws((await DB.get('draws_'+k))||[]);
   render();
   runParty(partyToday());
   syncHolidays().then(ch=>{if(ch){render();runParty(partyToday())}});

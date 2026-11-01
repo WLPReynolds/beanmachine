@@ -774,3 +774,22 @@ test('locking again only adds the new lines, and the old ones show as already in
   assert.equal(T.length, 2);
   assert.equal(a.window.linesForDate(g, next).length, 3);
 });
+
+// Lotto, Sat 31 Oct 2026: the feed gave Round 1 both rounds' breakdowns. The app mixed them in its table and crowd score.
+test('a Round 1 breakdown holding both rounds is cut to Round 1 only', () => {
+  const a = loadApp();
+  const rows = [['Match 6 (Round 1)', 0, 2e6], ['Match 6 (Round 2)', 0, 2e6], ['Match 5 + Bonus (Round 1)', 1, 1e6], ['Match 5 + Bonus (Round 2)', 2, 1e6],
+    ['Match 5 (Round 1)', 80, 1000], ['Match 5 (Round 2)', 31, 1000], ['Match 4 (Round 1)', 4996, 50], ['Match 4 (Round 2)', 1885, 50],
+    ['Match 3 (Round 1)', 102451, 10], ['Match 3 (Round 2)', 51410, 10], ['Match 2 (Round 1)', 884219, 1], ['Match 2 (Round 2)', 568840, 1],
+    ['Totals', 1613915, 0]].map(([t, w, p]) => ({ t, w, p }));
+  const [d] = a.get('sortDraws')([{ date: '2026-10-31', round: 'Round 1', main: [1, 3, 18, 25, 38, 43], extra: [45], jackpot: 2e6, prizes: rows }]);
+  assert.equal(d.prizes.length, 6);
+  const g = a.get('GAMES.lotto');
+  const k = a.window.prizeKeyMap(d);
+  assert.equal(k['5+1'].w, 1);
+  assert.equal(k['2+0'].w, 884219);
+  assert.equal(a.window.prizeFor(g, d, '5+1').amount, 1e6);
+  const c = a.window.crowd(g, d);
+  assert.ok(Math.abs(c.main.pct - 0.086) < 0.01, `Round 1 alone is about +9%, got ${c.main.pct}`);
+  assert.ok(Math.abs(c.m4.pct - 0.20) < 0.01, `Match 4 about +20%, got ${c.m4.pct}`);
+});
