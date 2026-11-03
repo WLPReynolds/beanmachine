@@ -793,3 +793,47 @@ test('a Round 1 breakdown holding both rounds is cut to Round 1 only', () => {
   assert.ok(Math.abs(c.main.pct - 0.086) < 0.01, `Round 1 alone is about +9%, got ${c.main.pct}`);
   assert.ok(Math.abs(c.m4.pct - 0.20) < 0.01, `Match 4 about +20%, got ${c.m4.pct}`);
 });
+
+test('win banner numbers each winning line and marks only the balls that matched', () => {
+  const a = loadApp({ settings: { demo: false, workerUrl: '' } });
+  const out = a.get(`(()=>{
+    const date = '2026-10-31';
+    const lines = [{ main: [40, 41, 42, 43, 44, 45], extra: [] }, { main: [1, 2, 3, 10, 11, 12], extra: [] }, { main: [1, 2, 3, 4, 5, 7], extra: [] }];
+    tickets.lotto = [{ id: 't', lines, dates: [date] }];
+    state.live.lotto = [
+      { date, round: 'Round 1', main: [1, 2, 3, 4, 5, 6], extra: [7], jackpot: 1 },
+      { date, round: 'Round 2', main: [20, 21, 22, 23, 24, 25], extra: [26], jackpot: 1 }];
+    tickets.euromillions = []; state.live.euromillions = [];
+    const root = document.createElement('div'); root.innerHTML = bannerHTML();
+    const lis = [...root.querySelectorAll('.r li')];
+    return lis.map(li => ({ text: li.textContent.replace(/\\s+/g, ' ').trim(),
+      got: [...li.querySelectorAll('.got')].map(x => +x.textContent), miss: [...li.querySelectorAll('.miss')].map(x => +x.textContent) }));
+  })()`);
+  const plain = JSON.parse(a.window.JSON.stringify(out));
+  assert.equal(plain.length, 2);
+  assert.match(plain[0].text, /^Line 2 · Round 1: matched 3/); // Line 1 did not win
+  assert.deepEqual(plain[0].got, [1, 2, 3]);
+  assert.deepEqual(plain[0].miss, [10, 11, 12]);
+  assert.match(plain[1].text, /^Line 3 · Round 1: matched 5 \+ Bonus/);
+  assert.deepEqual(plain[1].got, [1, 2, 3, 4, 5, 7]); // The bonus ball sits on the line and counts
+  assert.deepEqual(plain[1].miss, []);
+});
+
+test('win banner marks EuroMillions stars separately from main numbers', () => {
+  const a = loadApp({ settings: { demo: false, workerUrl: '' } });
+  const out = a.get(`(()=>{
+    const date = '2026-10-30';
+    tickets.euromillions = [{ id: 't', lines: [{ main: [1, 2, 3, 4, 5], extra: [1, 2] }], dates: [date] }];
+    state.live.euromillions = [{ date, main: [1, 2, 30, 31, 32], extra: [2, 9], jackpot: 1 }];
+    tickets.lotto = []; state.live.lotto = [];
+    const root = document.createElement('div'); root.innerHTML = bannerHTML();
+    const li = root.querySelector('.r li');
+    return JSON.stringify({ text: li.textContent, got: [...li.querySelectorAll('.ball.got')].map(x => +x.textContent),
+      star: [...li.querySelectorAll('.starw.got')].map(x => +x.textContent), starMiss: [...li.querySelectorAll('.starw.miss')].map(x => +x.textContent) });
+  })()`);
+  const r = JSON.parse(out);
+  assert.match(r.text, /^Line 1 · matched 2 \+ 1★/);
+  assert.deepEqual(r.got, [1, 2]);
+  assert.deepEqual(r.star, [2]);
+  assert.deepEqual(r.starMiss, [1]);
+});
