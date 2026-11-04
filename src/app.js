@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.3.4';
+const APP_VERSION='1.3.5';
 
 /* ---------- Game definitions ---------- */
 // "since" = first draw of the current format: Lotto went to 59 balls in Oct 2015; EuroMillions to 12 Lucky Stars in Sep 2016.
@@ -1036,7 +1036,7 @@ function sumDist(N,k){
   for(let x=1;x<=N;x++)for(let j=Math.min(k,x);j>=1;j--)for(let s=max;s>=x;s--)dp[j][s]+=dp[j-1][s-x];
   const tot=comb(N,k);return sumCache[key]=Array.from(dp[k],v=>v/tot);
 }
-function sumCard(g,ds){
+function sumRows(g,ds){
   const N=g.mainMax,k=g.main,dist=sumDist(N,k),n=ds.length,mid=k*(N+1)/2;
   const lo=k*(k+1)/2,hi=k*(2*N-k+1)/2,sd=Math.sqrt(k*(N+1)*(N-k)/12),w=Math.max(5,Math.round(sd/2/5)*5),rows=[];
   // Bins centred on the middle total, with the thin tails folded into the end bins
@@ -1045,10 +1045,64 @@ function sumCard(g,ds){
   for(let i=0;i<=edges.length;i++){
     const a=i===0?lo:edges[i-1],b=i===edges.length?hi:edges[i]-1;if(a>b)continue;
     let e=0;for(let s=a;s<=b;s++)e+=dist[s]||0;
-    rows.push({l:i===0?`≤${b}`:i===edges.length?`${a}+`:`${a}–${b}`,obs:sums.filter(s=>s>=a&&s<=b).length/n*100,exp:e*100});
+    rows.push({a,b,l:i===0?`≤${b}`:i===edges.length?`${a}+`:`${a}–${b}`,obs:sums.filter(s=>s>=a&&s<=b).length/n*100,exp:e*100});
   }
-  const avg=sums.reduce((a,b)=>a+b,0)/n;
+  return{rows,sums,lo,hi,mid};
+}
+function sumCard(g,ds){
+  const {rows,sums,lo,hi,mid}=sumRows(g,ds),k=g.main,avg=sums.reduce((a,b)=>a+b,0)/ds.length;
   return `<div class="card"><h2>Line totals</h2><p class="small muted" style="margin-top:0">Add up the ${k} main numbers of each draw. Totals can run from ${lo} to ${hi}, but most land near the middle (${mid}) just by chance, the same bell curve as the bean machine. Average here: <b>${avg.toFixed(1)}</b>.</p>${chanceBars(rows)}<div class="note">Every line has the same chance whatever its total. Middle totals are common only because many more lines add up to them.</div></div>`;
+}
+/* ---------- The overthinker's line ---------- */
+// Most common shape in the window (top line-total band, consecutive pairs, odd count), then as many "Due on paper"
+// balls as will fit, then the rest by their record on the next draw day. Balls are tried in Due order, so on a tie
+// the more overdue ball stays. Starts from the fullest set of Due balls, which spares checking millions of lines.
+function overthinkPick(N,k,f,due,dayCnt){
+  const inDue=new Set(due),rest=[...Array(N).keys()].map(i=>i+1).filter(x=>!inDue.has(x));
+  const fits=l=>{const a=[...l].sort((x,y)=>x-y),t=a.reduce((p,q)=>p+q,0);return t>=f.lo&&t<=f.hi&&a.filter(x=>x%2).length===f.odd&&Math.min(3,pairsIn(a))===f.pairs};
+  const score=l=>l.reduce((p,x)=>p+dayCnt[x],0);
+  let best=null,top=-1;
+  const fill=(line,from,left)=>{
+    if(!left){if(fits(line)){const v=score(line);if(v>top){top=v;best=[...line]}}return}
+    for(let i=from;i<=rest.length-left;i++){line.push(rest[i]);fill(line,i+1,left-1);line.pop()}
+  };
+  const keep=(line,from,left)=>{
+    if(!left){fill([...line],0,k-line.length);return}
+    for(let i=from;i<=due.length-left;i++){line.push(due[i]);keep(line,i+1,left-1);line.pop()}
+  };
+  for(let hit=Math.min(k,due.length);hit>=0;hit--){keep([],0,hit);if(best)return{main:best.sort((a,b)=>a-b),hit}}
+  return null;
+}
+const overCache=new Map();
+function overthinkLine(g,ds,all){
+  if(ds.length<20)return null;
+  const date=upcomingDates(g,1)[0],day=new Date(date+'T12:00:00').getDay(),withBonus=!g.sepPool&&settings.bonusCounts;
+  const key=[g.key,settings.demo,withBonus,day,ds.length,all.length,dKey(ds[0]),dKey(all[0])].join('|');
+  if(overCache.has(key))return overCache.get(key);
+  const top=a=>a.indexOf(Math.max(...a)),odds=Array(g.main+1).fill(0),pc=Array(4).fill(0),dayCnt=Array(g.mainMax+1).fill(0);
+  ds.forEach(d=>{odds[d.main.filter(v=>v%2).length]++;pc[Math.min(3,pairsIn(d.main))]++;
+    if(weekday(d)===day){d.main.forEach(x=>dayCnt[x]++);if(withBonus)(d.extra||[]).forEach(x=>dayCnt[x]++)}});
+  const {rows,sums}=sumRows(g,ds),count=r=>sums.filter(s=>s>=r.a&&s<=r.b).length,band=rows[top(rows.map(count))];
+  const f={odd:top(odds),pairs:top(pc),lo:band.a,hi:band.b,band:band.l},paper=onPaperLine(g,all);
+  const due=paper.mains.map(b=>b.x),pick=overthinkPick(g.mainMax,g.main,f,due,dayCnt);
+  const r=pick&&{...f,main:pick.main,hit:pick.hit,due,extra:paper.stars.map(b=>b.x).sort((a,b)=>a-b),day,total:pick.main.reduce((a,b)=>a+b,0)};
+  overCache.set(key,r);return r;
+}
+function overthinkCard(g,ds,all){
+  const o=overthinkLine(g,ds,all);if(!o)return '';
+  const nm=DAY_NAMES[o.day],k=g.main,row=(a,b)=>`<div class="row" style="justify-content:space-between;margin-top:6px;flex-wrap:nowrap"><span class="small muted">${a}</span><span class="small" style="text-align:right">${b}</span></div>`;
+  const pairs=o.pairs===0?'None':o.pairs===3?'3 or more pairs':`${o.pairs} pair${o.pairs>1?'s':''}`;
+  const odd=o.main.filter(x=>x%2).length,kept=o.main.filter(x=>o.due.includes(x)),added=o.main.filter(x=>!o.due.includes(x));
+  return `<div class="card"><h2>The overthinker's line</h2><p class="small muted" style="margin-top:0">Every box ticked at once. Take the most common total, neighbours and odd/even split from the panels above, then squeeze in as many “Due on paper” balls as will fit, and settle the rest on ${nm} form.</p>
+  ${rowBalls(g,o.main,o.extra,{fit:'fit'})}
+  ${row('Total',`${o.total} (most common band: ${o.band})`)}
+  ${row('Neighbours',pairs)}
+  ${row('Odd / even',`${odd} odd, ${k-odd} even`)}
+  ${row('Due on paper',kept.length?`${kept.length} of ${k}: ${kept.join(', ')}`:'None would fit')}
+  ${added.length?row(`Best on a ${nm}`,added.join(', ')):''}
+  ${o.extra.length?row('Lucky Stars','The two due on paper'):''}
+  <button class="btn ghost" style="margin-top:10px" data-act="keepover">Save to My lines</button>
+  <div class="note">For ${nm}'s draw. All that thinking, and it's exactly as likely to win as 1, 2, 3, 4, 5${g.sepPool?' with stars 1 and 2':', 6'}.</div></div>`;
 }
 // Draw days with no stored draw, between the oldest and newest draws given, grouped into runs
 function missingRuns(g,ds){
@@ -1068,10 +1122,11 @@ function gapNote(g,ds){
   const big=[...m.runs].sort((a,b)=>b.n-a.n).slice(0,2).map(r=>r.from===r.to?sd(r.from):`${sd(r.from)} – ${sd(r.to)}`);
   return `<div class="note" style="color:var(--warn)">${m.n} draw date${m.n===1?' is':'s are'} missing from this window (${big.join('; ')}${m.runs.length>2?'; and others':''}). Counts are from the draws that are here, and “draws ago” skips the gap.</div>`;
 }
+function statWindow(all){return all.slice(0,Math.min(all.length,{all:all.length,'100':100,'26':26}[state.statWin]))}
 function viewStats(){
   if(!statsUnlocked())return lockedStats();
   const g=G(),all=draws();if(!all.length)return noData();
-  const wins={all:all.length,'100':100,'26':26},ds=all.slice(0,Math.min(all.length,wins[state.statWin]));
+  const ds=statWindow(all);
   const pool=g.sepPool?state.statPool:'main',N=pool==='extra'?g.extraMax:g.mainMax,k=pool==='extra'?g.extra:g.main,n=ds.length;
   const cnt=Array(N+1).fill(0),since=Array(N+1).fill(null);
   all.forEach((d,i)=>{(pool==='extra'?d.extra:d.main).forEach(x=>{if(since[x]===null)since[x]=i})});
@@ -1111,6 +1166,7 @@ function viewStats(){
     h+=`<div class="card"><h2>Odd / even split</h2><div class="bars">${rows.map(r=>`<div class="b"><span>${r.j} odd</span><div class="t"><i style="width:${r.obs/top*100}%"></i><u style="left:${r.exp/top*100}%"></u></div><span class="small">${r.obs.toFixed(0)}%</span></div>`).join('')}</div><div class="note">Bars = what happened. White marks = what chance predicts.</div></div>`;
     h+=consecutiveCard(g,ds);
     h+=sumCard(g,ds);
+    h+=overthinkCard(g,ds,all);
   }
   return h;
 }
@@ -1196,6 +1252,8 @@ document.addEventListener('click',async e=>{
     if(a==='keepgen'){const l=state.gen[li];if(L.length>=MAX_LINES){toast(`Up to ${MAX_LINES} lines`);return}L.push({main:l.main,extra:l.extra});saveLines();toast(`Saved as Line ${L.length}`)}
     if(a==='keeppaper'){const p=onPaperLine(g,draws(g));if(L.length>=MAX_LINES){toast(`Up to ${MAX_LINES} lines`);return}
       L.push({main:p.mains.map(b=>b.x).sort((x,y)=>x-y),extra:p.stars.map(b=>b.x).sort((x,y)=>x-y)});saveLines();toast(`Saved as Line ${L.length}`)}
+    if(a==='keepover'){const all=draws(g),o=overthinkLine(g,statWindow(all),all);if(!o)return;if(L.length>=MAX_LINES){toast(`Up to ${MAX_LINES} lines`);return}
+      L.push({main:o.main,extra:o.extra});saveLines();toast(`Saved as Line ${L.length}`)}
     if(a==='simgo'){if(sim&&sim.running){sim.running=false}else{simRun()}}
     if(a==='simspeed'){state.simSpeed=t.dataset.speed;if(sim)sim.warpAt=performance.now()}
     if(a==='simreset'){if(sim){sim.running=false;sim=null}}
