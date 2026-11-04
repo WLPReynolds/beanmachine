@@ -18,7 +18,7 @@ function loadApp({ settings, stats = true, url = 'https://lottolab.test/?party=n
   // Tests that need the bean machine animation drive bmTick() by hand.
   w.requestAnimationFrame = () => 0;
   w.cancelAnimationFrame = () => {};
-  // Same for repeating timers: the grace-period clock would keep the process alive between 19:30 and 20:00
+  // Same for repeating timers: the grace-period clock would keep the process alive during the grace period
   w.setInterval = () => 0;
   // Tests run in sample mode with no Worker unless they say otherwise (the app's own default is the real Worker)
   w.localStorage.setItem('ll_settings', JSON.stringify(settings ?? { demo: true, workerUrl: '' }));

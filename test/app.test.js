@@ -875,15 +875,16 @@ test("overthinker's line follows the panels for both games, shows after Line tot
 });
 
 /* ---------- Grace period ---------- */
-test('graceDate opens tonight from 19:30 until 20:00 on draw days only', () => {
+test('graceDate opens tonight from 19:30 until 21:00 on draw days only', () => {
   const g = "GAMES.lotto", at = t => app.get(`graceDate(${g},new Date('${t}'))`);
   assert.equal(at('2026-11-04T19:29:59'), null);
   assert.equal(at('2026-11-04T19:30:00'), '2026-11-04');
-  assert.equal(at('2026-11-04T19:59:59'), '2026-11-04');
-  assert.equal(at('2026-11-04T20:00:00'), null);
+  assert.equal(at('2026-11-04T20:59:59'), '2026-11-04');
+  assert.equal(at('2026-11-04T21:00:00'), null);
   assert.equal(at('2026-11-05T19:45:00'), null);
-  assert.equal(app.get("graceClock(graceLeft('2026-11-04',new Date('2026-11-04T19:45:30')))"), '14:30');
-  const full = app.get('JSON.stringify(graceSand(1800))'), empty = app.get('JSON.stringify(graceSand(0))');
+  assert.equal(app.get("graceClock(graceLeft('2026-11-04',new Date('2026-11-04T19:45:30')))"), '1:14:30');
+  assert.equal(app.get("graceClock(graceLeft('2026-11-04',new Date('2026-11-04T20:45:30')))"), '14:30');
+  const full = app.get('JSON.stringify(graceSand(5400))'), empty = app.get('JSON.stringify(graceSand(0))');
   assert.equal(JSON.parse(full).topH, 21); assert.equal(JSON.parse(full).botH, 0);
   assert.equal(JSON.parse(empty).topH, 0); assert.equal(JSON.parse(empty).botH, 17);
 });
@@ -897,7 +898,7 @@ test('during the grace period tonight can be locked in and undone, and Saturday 
   doc.querySelector('[data-act="lockopen"]').click();
   assert.deepEqual(JSON.parse(a.get('JSON.stringify([...state.lock.dates])')), ['2026-11-07']);
   assert.ok(doc.querySelector('[data-grace="2026-11-04"]'));
-  assert.equal(doc.querySelector('#gclock').textContent, '15:00');
+  assert.equal(doc.querySelector('#gclock').textContent, '1:15:00');
   doc.querySelector('[data-act="lockdate"][data-d="2026-11-04"]').click();
   doc.querySelector('[data-act="lockdate"][data-d="2026-11-07"]').click();
   doc.querySelector('[data-act="lockgo"]').click();
