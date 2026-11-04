@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.3.5';
+const APP_VERSION='1.3.6';
 
 /* ---------- Game definitions ---------- */
 // "since" = first draw of the current format: Lotto went to 59 balls in Oct 2015; EuroMillions to 12 Lucky Stars in Sep 2016.
@@ -347,7 +347,36 @@ const isDrawn=(g,date)=>liveFor(g,date).length>=expectedRounds(g,date);
 // Upcoming draw dates you can still buy for (sales close about 19:30 on the day)
 function upcomingDates(g,n=8){const out=[],now=new Date();for(let i=0;out.length<n&&i<60;i++){const c=new Date(now);c.setDate(now.getDate()+i);c.setHours(19,30,0,0);if(g.days.includes(c.getDay())&&c>now)out.push(iso(c))}return out}
 // Still on sale: draw date in the future, or today before sales close (19:30)
-const stillOpen=dt=>{const c=new Date(dt+'T19:30:00');return c>new Date()};
+// Undo stays open through the grace period, so a line logged late can still be corrected
+const stillOpen=dt=>{const c=new Date(dt+'T20:00:00');return c>new Date()};
+/* Grace period: sales close at 19:30, but a ticket bought just in time may not get logged until later.
+   From 19:30 to 20:00 on a draw day, tonight's draw can still be picked when locking in lines. */
+function graceDate(g,now=new Date()){
+  if(!g.days.includes(now.getDay()))return null;
+  const d=iso(now);
+  return now>=new Date(d+'T19:30:00')&&now<new Date(d+'T20:00:00')&&!isDrawn(g,d)?d:null;
+}
+const graceLeft=(date,now=new Date())=>Math.max(0,Math.ceil((new Date(date+'T20:00:00')-now)/1000));
+const graceClock=s=>`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+// Sand heights for s seconds left of 30 minutes
+function graceSand(s){const f=Math.min(1,s/1800);return{topY:6+(1-f)*21,topH:21*f,botY:51-(1-f)*17,botH:(1-f)*17}}
+function graceBox(date,now=new Date()){
+  const s=graceLeft(date,now),a=graceSand(s),glass='M8 4H32C32 17 23 22 22 28C23 34 32 39 32 52H8C8 39 17 34 18 28C17 22 8 17 8 4Z';
+  return `<div class="grace${s<300?' low':''}" data-grace="${date}"><svg viewBox="0 0 40 56" width="40" height="56" aria-hidden="true"><defs><clipPath id="glass"><path d="${glass}"/></clipPath></defs>
+  <g clip-path="url(#glass)"><rect class="sand" id="sandt" x="0" y="${a.topY}" width="40" height="${a.topH}"/><rect class="sand" id="sandb" x="0" y="${a.botY}" width="40" height="${a.botH}"/><line class="fall" x1="20" y1="27" x2="20" y2="52"/></g>
+  <path class="glass" d="${glass}"/><path class="caps" d="M5 3H35M5 53H35"/></svg>
+  <div><b class="gclock" id="gclock" role="timer">${graceClock(s)}</b><div class="small">The sands of time: bought before 19:30 but forgot to log it? Tap ${shortDate(date)} above before tonight's draw at 20:00.</div></div></div>`;
+}
+let graceTimer=null;
+function graceTick(){
+  const box=$('[data-grace]');
+  if(!box){clearInterval(graceTimer);graceTimer=null;return}
+  const date=box.dataset.grace,s=graceLeft(date);
+  if(s<=0){clearInterval(graceTimer);graceTimer=null;state.lock?.dates.delete(date);const y=scrollY;render();scrollTo(0,y);toast('The sands have run out for tonight’s draw');return}
+  const a=graceSand(s),t=$('#sandt'),b=$('#sandb');
+  $('#gclock').textContent=graceClock(s);box.classList.toggle('low',s<300);
+  t.setAttribute('y',a.topY);t.setAttribute('height',a.topH);b.setAttribute('y',a.botY);b.setAttribute('height',a.botH);
+}
 const sameLine=(a,b)=>same(a.main,b.main)&&same(a.extra||[],b.extra||[]);
 // Pending (not yet drawn) dates this exact line is locked in for
 function lockedDates(g,line){const out=new Set();tickets[g.key].forEach(t=>{if(t.lines.some(l=>sameLine(l,line)))t.dates.forEach(dt=>{if(!isDrawn(g,dt))out.add(dt)})});return[...out].sort()}
@@ -860,11 +889,13 @@ function alreadyIn(g,l,dates){return dates.size>0&&[...dates].every(dt=>linesFor
 // The ticked lines that aren't already locked for every chosen draw
 function lockable(g,lk){const L=myLines[g.key];return [...lk.sel].filter(i=>L[i]&&!alreadyIn(g,L[i],lk.dates)).sort((x,y)=>x-y)}
 function lockPanel(g){
-  const L=myLines[g.key],up=upcomingDates(g),lk=state.lock,n=lockable(g,lk).length;
+  const L=myLines[g.key],grace=graceDate(g),up=[...(grace?[grace]:[]),...upcomingDates(g)],lk=state.lock,n=lockable(g,lk).length;
+  if(grace&&!graceTimer)graceTimer=setInterval(graceTick,1000);
   return `<div class="card" style="border-color:var(--gold)"><h2>🔒 Lock in lines</h2><p class="small muted" style="margin-top:0">Tick the lines you've bought and the draws they're for. Locked lines can't be changed until their draws have happened; you can still add more.</p>
   <h3>Lines</h3>${L.map((l,i)=>alreadyIn(g,l,lk.dates)?`<div class="chk in"><span class="box">🔒</span><b class="small" style="width:44px">Line ${i+1}</b>${rowBalls(g,l.main,l.extra,{fit:'fit'})}</div>`:`<div class="chk ${lk.sel.has(i)?'on':''}" data-act="locksel" data-i="${i}"><span class="box">${lk.sel.has(i)?'✓':''}</span><b class="small" style="width:44px">Line ${i+1}</b>${rowBalls(g,l.main,l.extra,{fit:'fit'})}</div>`).join('')}
   ${L.some(l=>alreadyIn(g,l,lk.dates))?`<div class="note">🔒 = already locked in for ${lk.dates.size>1?'these draws':'this draw'}. New lines are added alongside them.</div>`:''}
-  <h3>Draws</h3><div class="chips">${up.map(dt=>`<button class="chip ${lk.dates.has(dt)?'on':''}" data-act="lockdate" data-d="${dt}">${shortDate(dt)}</button>`).join('')}</div>
+  <h3>Draws</h3><div class="chips">${up.map(dt=>`<button class="chip ${lk.dates.has(dt)?'on':''}" data-act="lockdate" data-d="${dt}">${dt===grace?'⏳ ':''}${shortDate(dt)}</button>`).join('')}</div>
+  ${grace?graceBox(grace):''}
   <div class="note">Away for a while? Tick every draw until you're back.</div>
   <div class="row" style="margin-top:12px"><button class="btn" data-act="lockgo">Add ${n} line${n===1?'':'s'} × ${lk.dates.size} draw${lk.dates.size===1?'':'s'}</button><button class="btn ghost" data-act="lockcancel">Cancel</button></div></div>`;
 }

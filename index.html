@@ -116,6 +116,17 @@ clip-path:polygon(50% 0,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,
 .chips{display:flex;gap:6px;flex-wrap:wrap}
 .chip{border:1px solid var(--line);background:rgba(255,255,255,.06);color:var(--muted);border-radius:999px;padding:7px 12px;font-weight:700;font-size:13px}
 .chip.on{background:rgba(247,201,72,.2);border-color:var(--gold);color:var(--gold2)}
+.grace{display:flex;gap:12px;align-items:center;margin-top:10px;padding:10px 12px;border:1px solid var(--gold);border-radius:12px;background:rgba(247,201,72,.08)}
+.grace svg{flex:none}
+.grace .glass{fill:rgba(255,255,255,.08);stroke:var(--gold2);stroke-width:1.5}
+.grace .caps{fill:none;stroke:var(--gold);stroke-width:3;stroke-linecap:round}
+.grace .sand{fill:var(--gold)}
+.grace .fall{stroke:var(--gold);stroke-width:1.5;stroke-dasharray:2 3;animation:sandfall .5s linear infinite}
+.grace .gclock{display:block;font-size:24px;line-height:1.1;color:var(--gold2);font-variant-numeric:tabular-nums}
+.grace.low{border-color:var(--warn)}
+.grace.low .gclock{color:var(--warn)}
+@keyframes sandfall{to{stroke-dashoffset:-5}}
+@media (prefers-reduced-motion:reduce){.grace .fall{animation:none}}
 label.f{display:block;font-size:13px;color:var(--muted);margin:12px 0 4px}
 input[type=text],input[type=url],input[type=number]{width:100%;padding:11px 12px;border-radius:12px;border:1px solid var(--line);background:rgba(0,0,0,.3);color:var(--ink);font-size:15px}
 .tog{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
@@ -217,6 +228,6 @@ radial-gradient(circle at 50% 45%,var(--c) 0 55%,var(--d) 100%)}
 <main id="view"></main>
 <nav id="nav"></nav>
 <div class="toast" id="toast"></div>
-<script src="src/app.js?v=1.3.5"></script>
+<script src="src/app.js?v=1.3.6"></script>
 </body>
 </html>
