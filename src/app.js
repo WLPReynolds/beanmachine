@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.3.6';
+const APP_VERSION='1.3.7';
 
 /* ---------- Game definitions ---------- */
 // "since" = first draw of the current format: Lotto went to 59 balls in Oct 2015; EuroMillions to 12 Lucky Stars in Sep 2016.
@@ -348,24 +348,25 @@ const isDrawn=(g,date)=>liveFor(g,date).length>=expectedRounds(g,date);
 function upcomingDates(g,n=8){const out=[],now=new Date();for(let i=0;out.length<n&&i<60;i++){const c=new Date(now);c.setDate(now.getDate()+i);c.setHours(19,30,0,0);if(g.days.includes(c.getDay())&&c>now)out.push(iso(c))}return out}
 // Still on sale: draw date in the future, or today before sales close (19:30)
 // Undo stays open through the grace period, so a line logged late can still be corrected
-const stillOpen=dt=>{const c=new Date(dt+'T20:00:00');return c>new Date()};
+const GRACE_END='21:00',GRACE_SECS=90*60;
+const stillOpen=dt=>{const c=new Date(`${dt}T${GRACE_END}:00`);return c>new Date()};
 /* Grace period: sales close at 19:30, but a ticket bought just in time may not get logged until later.
-   From 19:30 to 20:00 on a draw day, tonight's draw can still be picked when locking in lines. */
+   From 19:30 to GRACE_END on a draw day, until results arrive, tonight's draw can still be picked when locking in lines. */
 function graceDate(g,now=new Date()){
   if(!g.days.includes(now.getDay()))return null;
   const d=iso(now);
-  return now>=new Date(d+'T19:30:00')&&now<new Date(d+'T20:00:00')&&!isDrawn(g,d)?d:null;
+  return now>=new Date(d+'T19:30:00')&&now<new Date(`${d}T${GRACE_END}:00`)&&!isDrawn(g,d)?d:null;
 }
-const graceLeft=(date,now=new Date())=>Math.max(0,Math.ceil((new Date(date+'T20:00:00')-now)/1000));
-const graceClock=s=>`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
-// Sand heights for s seconds left of 30 minutes
-function graceSand(s){const f=Math.min(1,s/1800);return{topY:6+(1-f)*21,topH:21*f,botY:51-(1-f)*17,botH:(1-f)*17}}
+const graceLeft=(date,now=new Date())=>Math.max(0,Math.ceil((new Date(`${date}T${GRACE_END}:00`)-now)/1000));
+const graceClock=s=>{const h=Math.floor(s/3600),m=Math.floor(s/60)%60,p=v=>String(v).padStart(2,'0');return h?`${h}:${p(m)}:${p(s%60)}`:`${m}:${p(s%60)}`};
+// Sand heights for s seconds left of the grace period
+function graceSand(s){const f=Math.min(1,s/GRACE_SECS);return{topY:6+(1-f)*21,topH:21*f,botY:51-(1-f)*17,botH:(1-f)*17}}
 function graceBox(date,now=new Date()){
   const s=graceLeft(date,now),a=graceSand(s),glass='M8 4H32C32 17 23 22 22 28C23 34 32 39 32 52H8C8 39 17 34 18 28C17 22 8 17 8 4Z';
   return `<div class="grace${s<300?' low':''}" data-grace="${date}"><svg viewBox="0 0 40 56" width="40" height="56" aria-hidden="true"><defs><clipPath id="glass"><path d="${glass}"/></clipPath></defs>
   <g clip-path="url(#glass)"><rect class="sand" id="sandt" x="0" y="${a.topY}" width="40" height="${a.topH}"/><rect class="sand" id="sandb" x="0" y="${a.botY}" width="40" height="${a.botH}"/><line class="fall" x1="20" y1="27" x2="20" y2="52"/></g>
   <path class="glass" d="${glass}"/><path class="caps" d="M5 3H35M5 53H35"/></svg>
-  <div><b class="gclock" id="gclock" role="timer">${graceClock(s)}</b><div class="small">The sands of time: bought before 19:30 but forgot to log it? Tap ${shortDate(date)} above before tonight's draw at 20:00.</div></div></div>`;
+  <div><b class="gclock" id="gclock" role="timer">${graceClock(s)}</b><div class="small">The sands of time: bought before 19:30 but forgot to log it? Tap ${shortDate(date)} above before ${GRACE_END}.</div></div></div>`;
 }
 let graceTimer=null;
 function graceTick(){
