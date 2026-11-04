@@ -873,3 +873,36 @@ test("overthinker's line follows the panels for both games, shows after Line tot
   app.get("state.statPool='main'; state.game='lotto'; render();");
   assert.equal(app.errors.length, 0, app.errors.map(e => e.message).join('\n'));
 });
+
+/* ---------- Grace period ---------- */
+test('graceDate opens tonight from 19:30 until 20:00 on draw days only', () => {
+  const g = "GAMES.lotto", at = t => app.get(`graceDate(${g},new Date('${t}'))`);
+  assert.equal(at('2026-11-04T19:29:59'), null);
+  assert.equal(at('2026-11-04T19:30:00'), '2026-11-04');
+  assert.equal(at('2026-11-04T19:59:59'), '2026-11-04');
+  assert.equal(at('2026-11-04T20:00:00'), null);
+  assert.equal(at('2026-11-05T19:45:00'), null);
+  assert.equal(app.get("graceClock(graceLeft('2026-11-04',new Date('2026-11-04T19:45:30')))"), '14:30');
+  const full = app.get('JSON.stringify(graceSand(1800))'), empty = app.get('JSON.stringify(graceSand(0))');
+  assert.equal(JSON.parse(full).topH, 21); assert.equal(JSON.parse(full).botH, 0);
+  assert.equal(JSON.parse(empty).topH, 0); assert.equal(JSON.parse(empty).botH, 17);
+});
+
+test('during the grace period tonight can be locked in and undone, and Saturday stays the default', () => {
+  const a = loadApp();
+  a.window.eval(`(()=>{const R=Date,T=new R('2026-11-04T19:45:00').getTime();
+    window.Date=class extends R{constructor(...x){super(...(x.length?x:[T]))}static now(){return T}}})()`);
+  const doc = a.window.document;
+  a.get("clearInterval(graceTimer);state.game='lotto';state.view='gen';myLines.lotto=[{main:[14,27,31,33,40,54],extra:[]}];tickets.lotto=[];render();");
+  doc.querySelector('[data-act="lockopen"]').click();
+  assert.deepEqual(JSON.parse(a.get('JSON.stringify([...state.lock.dates])')), ['2026-11-07']);
+  assert.ok(doc.querySelector('[data-grace="2026-11-04"]'));
+  assert.equal(doc.querySelector('#gclock').textContent, '15:00');
+  doc.querySelector('[data-act="lockdate"][data-d="2026-11-04"]').click();
+  doc.querySelector('[data-act="lockdate"][data-d="2026-11-07"]').click();
+  doc.querySelector('[data-act="lockgo"]').click();
+  assert.deepEqual(JSON.parse(a.get('JSON.stringify(tickets.lotto.map(t=>t.dates))')), [['2026-11-04']]);
+  assert.ok(doc.querySelector('[data-act="delticket"]'));
+  a.get('clearInterval(graceTimer)');
+  assert.equal(a.errors.length, 0, a.errors.map(e => e.message).join('\n'));
+});
