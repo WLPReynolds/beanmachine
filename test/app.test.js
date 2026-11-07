@@ -839,17 +839,22 @@ test('win banner marks EuroMillions stars separately from main numbers', () => {
 });
 
 /* ---------- The overthinker's line ---------- */
-test('overthinkPick keeps the most Due balls the filters allow, then fills by day record', () => {
-  const pick = fn('overthinkPick');
-  const day = Array(60).fill(0); day[54] = 9; day[50] = 5;
-  const f = { odd: 3, pairs: 0, lo: 190, hi: 209 };
-  const r = pick(59, 6, f, [10, 40, 14, 27, 33, 31], day);
-  // All six sum to 155, so one even has to go, and 54 has the best day record
-  assert.equal(r.hit, 5);
-  assert.ok(r.main.includes(54));
-  assert.equal(r.main.reduce((a, b) => a + b, 0) >= 190, true);
-  assert.equal(r.main.filter(x => x % 2).length, 3);
-  assert.equal(fn('pairsIn')(r.main), 0);
+test('overthinkPick: random first, then a Due ball, then the day\'s best, then relaxes the rules', () => {
+  const raw = fn('overthinkPick'), pick = (...a) => JSON.parse(JSON.stringify(raw(...a))), zero = () => 0, none = new Set();
+  // rng 0 always draws the lowest balls, so every random try is 1, 2, 3 (total 6)
+  const f = { odd: 3, pairs: 0, lo: 13, hi: 13 }, day = Array(11).fill(0);
+  let r = pick(10, 3, { odd: 2, pairs: 2, lo: 6, hi: 6 }, [], day, none, zero);
+  assert.deepEqual([r.main, r.how, r.relaxed], [[1, 2, 3], 'random', 0]);
+  r = pick(10, 3, f, [9], day, none, zero);
+  assert.deepEqual([r.main, r.how, r.ball], [[1, 3, 9], 'due', 9]);
+  day[7] = 5; day[9] = 3;            // 7 is the best on the day but can't fit; 9 can
+  r = pick(10, 3, f, [8], day, none, zero);
+  assert.deepEqual([r.main, r.how, r.ball], [[1, 3, 9], 'day', 9]);
+  r = pick(10, 3, { odd: 0, pairs: 0, lo: 6, hi: 6 }, [], day, none, zero);
+  assert.deepEqual([r.main, r.relaxed], [[1, 2, 3], 2]);
+  // Last draw's numbers never appear, even as Due or day picks
+  r = pick(10, 3, f, [9], day, new Set([1, 9]), zero);
+  assert.ok(!r.main.includes(1) && !r.main.includes(9));
 });
 
 test("overthinker's line follows the panels for both games, shows after Line totals and saves", () => {
@@ -859,15 +864,26 @@ test("overthinker's line follows the panels for both games, shows after Line tot
     const o = JSON.parse(app.get(`state.statWin='all';JSON.stringify(overthinkLine(GAMES.${key},draws(GAMES.${key}),draws(GAMES.${key})))`));
     assert.equal(new Set(o.main).size, g.main);
     assert.ok(o.total >= o.lo && o.total <= o.hi);
-    assert.equal(o.main.filter(x => x % 2).length, o.odd);
-    assert.equal(Math.min(3, fn('pairsIn')(o.main)), o.pairs);
+    if (o.relaxed === 0) {
+      assert.equal(o.main.filter(x => x % 2).length, o.odd);
+      assert.equal(Math.min(3, fn('pairsIn')(o.main)), o.pairs);
+    }
     assert.equal(o.extra.length, g.sepPool ? g.extra : 0);
+    const last = JSON.parse(app.get(`(()=>{const l=lastDrawn(GAMES.${key},draws(GAMES.${key}));return JSON.stringify({m:[...l.m],x:[...l.x]})})()`));
+    assert.ok(o.skipped.length > 0 && o.main.every(n => !last.m.includes(n)) && o.extra.every(n => !last.x.includes(n)));
   }
   app.get("state.game='lotto'; state.view='stats'; state.statPool='main'; state.statWin='100'; myLines.lotto=[]; render();");
   const html = doc.querySelector('#view').innerHTML;
   assert.ok(html.indexOf("The overthinker's line") > html.indexOf('Line totals'));
+  const now = () => app.get('JSON.stringify(overthinkLine(GAMES.lotto,statWindow(draws(GAMES.lotto)),draws(GAMES.lotto)).main)');
+  const before = now();
+  app.get('overCache.clear()');
+  assert.equal(now(), before, 'stays the same until the next draw');
   doc.querySelector('[data-act="keepover"]').click();
-  assert.equal(app.get('JSON.stringify(myLines.lotto)'), app.get("JSON.stringify([{main:overthinkLine(GAMES.lotto,statWindow(draws(GAMES.lotto)),draws(GAMES.lotto)).main,extra:[]}])"));
+  assert.equal(app.get('JSON.stringify(myLines.lotto)'), `[{"main":${before},"extra":[]}]`);
+  let moved = false;
+  for (let i = 0; i < 5 && !moved; i++) { doc.querySelector('[data-act="rerollover"]').click(); moved = now() !== before; }
+  assert.ok(moved, 'Re-roll gives a new line');
   app.get("state.statWin='all'; state.game='euromillions'; state.statPool='extra'; render();");
   assert.ok(!doc.querySelector('#view').innerHTML.includes("The overthinker's line"));
   app.get("state.statPool='main'; state.game='lotto'; render();");
