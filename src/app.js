@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.3.8';
+const APP_VERSION='1.3.9';
 
 /* ---------- Game definitions ---------- */
 // "since" = first draw of the current format: Lotto went to 59 balls in Oct 2015; EuroMillions to 12 Lucky Stars in Sep 2016.
@@ -729,7 +729,7 @@ function simBalls(s){
       return `<div class="simend"><div class="small" style="font-weight:800">No jackpot. Closest: ${lbl}</div>${rowBalls(g,srt(b.main),srt(b.extra),{fit:'fit',mark:mk})}
       <div class="small simdates"><div>First on</div><b>${simWhen(s,b)}</b></div></div>`}
   }
-  if(!s.last)return `<div class="muted small" style="min-height:44px;display:flex;align-items:center">Balls appear here once it starts.</div>`;
+  if(!s.last)return `<div class="muted small" style="min-height:44px;display:flex;align-items:center;justify-content:center;text-align:center">Balls appear here once it starts.</div>`;
   const mk=(n,isX)=>(isX&&g.sepPool?s.lx[n]:s.line[n])?'simhit':'';
   return rowBalls(g,[...s.last.main].sort((a,b)=>a-b),[...s.last.extra].sort((a,b)=>a-b),{fit:'fit',mark:mk,anim:speedOf()==='watch'});
 }
@@ -842,7 +842,7 @@ function viewCheck(){
   h+=`<div class="card"><h2>Ever drawn?</h2>${exact.length?
     `<p>🎉 Yes — this exact line came up on <b>${exact.map(dl).join(', ')}</b>.</p><p class="small muted">Its chance of coming up again is the same as any other line. But people do play past winning lines, so a repeat would probably be shared.</p>`:
     `<p>Never drawn as a full line in <b>${ds.length.toLocaleString()}</b> draws${g.roundsSince?' (each round counts as one)':''} since ${fmtDate(g.since)}.</p><p class="small muted">With ${comb(g.mainMax,g.main).toLocaleString()} possible lines, almost every line is in the same boat — it doesn't make it “due”.</p>`}
-  <h3>Closest call</h3><p style="margin:0"><b>${best}</b> main number${best===1?'':'s'} on ${bestDates.map(s=>dl(s.d)).join(', ')}${scored.filter(s=>s.m===best).length>3?' and others':''}.</p>
+  <h3>Closest call</h3><p style="margin:0"><b>${best}</b> main number${best===1?'':'s'}${bestDates.length>1?' on:':' on'}</p>${bestDates.map(s=>`<div class="small muted" style="margin:10px 0 4px">${dl(s.d)}</div>${rowBalls(g,[...s.d.main].sort((a,b)=>a-b),[...s.d.extra].sort((a,b)=>a-b),{fit:'fit-md',mark:(n,isX)=>(isX&&g.sepPool?extra.includes(n):main.includes(n))?'simhit':''})}`).join('')}${scored.filter(s=>s.m===best).length>3?'<p class="small muted" style="margin:8px 0 0">…and other draws.</p>':''}
   <h3>Last draw · ${fmtDate(ls[0].date)}</h3><p style="margin:0">${lastTxt}.</p></div>`;
   if(g.key==='lotto'){
     const c=k=>scored.filter(s=>s.m===k&&!(k===5&&s.e)).length,c5b=scored.filter(s=>s.m===5&&s.e).length;
