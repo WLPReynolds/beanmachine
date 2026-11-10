@@ -760,6 +760,7 @@ test('locking again only adds the new lines, and the old ones show as already in
     a.get('state').view = 'gen'; a.window.render();
     a.window.document.querySelector('[data-act="lockopen"]').click();
     a.window.document.querySelector('[data-act="lockgo"]').click();
+    a.window.document.querySelector('[data-act="lockconfirm"]').click();
   };
   lock();
   assert.equal(T.length, 1);
@@ -918,6 +919,7 @@ test('during the grace period tonight can be locked in and undone, and Saturday 
   doc.querySelector('[data-act="lockdate"][data-d="2026-11-04"]').click();
   doc.querySelector('[data-act="lockdate"][data-d="2026-11-07"]').click();
   doc.querySelector('[data-act="lockgo"]').click();
+  doc.querySelector('[data-act="lockconfirm"]').click();
   assert.deepEqual(JSON.parse(a.get('JSON.stringify(tickets.lotto.map(t=>t.dates))')), [['2026-11-04']]);
   assert.ok(doc.querySelector('[data-act="delticket"]'));
   a.get('clearInterval(graceTimer)');
@@ -950,15 +952,17 @@ test('next-draw card: gold when lines are locked in, sad when not, each game on 
   assert.deepEqual(r.emInLate, { date: '2026-11-10', lines: 1 });
   assert.deepEqual(r.emDrawn, { date: '2026-11-13', lines: 0 });
   assert.match(r.lottoHTML, /data-next="in"/);
-  assert.match(r.lottoHTML, /You're in the next draw!/);
+  assert.match(r.lottoHTML, /Lines locked in for the next draw!/);
+  assert.match(r.lottoHTML, /official lottery operator/);
+  assert.doesNotMatch(r.lottoHTML + r.emHTML, /You're (not )?in/);
   assert.match(r.lottoHTML, /Wednesday 11 November/);
-  assert.match(r.lottoHTML, /<b>2<\/b> lines locked in/);
+  assert.match(r.lottoHTML, /<b>2<\/b> lines</);
   assert.match(r.emHTML, /data-next="out"/);
   assert.match(r.emHTML, /EuroMillions · Tonight</);
   assert.doesNotMatch(r.emHTML, /Fancy a go/);
   assert.match(r.emLateHTML, /EuroMillions · Friday 13 Nov</);
   assert.doesNotMatch(r.emHTML, /<button/); // a reminder only, no button
-  assert.match(r.emInHTML, /<b>1<\/b> line locked in/);
+  assert.match(r.emInHTML, /<b>1<\/b> line</);
   assert.match(r.emInHTML, /class="ib-when">Tonight<\/div>/); // just "Tonight", not the date as well
   assert.doesNotMatch(r.lottoHTML, /Tonight/);
 });
@@ -968,4 +972,36 @@ test('Latest page shows the next-draw card for the selected game', () => {
   const shown = a.get(`(()=>{tickets.lotto=[];tickets.euromillions=[];state.view='latest';state.game='lotto';render();
     return !!document.querySelector('#view [data-next]')})()`);
   assert.equal(shown, true);
+});
+
+test('locking in lines asks first, and says the app never buys or enters anything', () => {
+  const a = loadApp();
+  const doc = a.window.document, T = a.get('tickets').lotto;
+  a.get("state.game='lotto';state.view='gen';myLines.lotto=[{main:[1,2,3,4,5,6],extra:[]}];tickets.lotto.length=0;render();");
+  doc.querySelector('[data-act="lockopen"]').click();
+  doc.querySelector('[data-act="lockgo"]').click();
+  const dlg = doc.querySelector('#dlg-lock');
+  assert.ok(dlg && dlg.hasAttribute('open'));
+  assert.match(dlg.textContent, /doesn't buy, submit or enter anything/);
+  assert.match(dlg.textContent, /official lottery operator/);
+  assert.equal(T.length, 0); // nothing saved until confirmed
+  doc.querySelector('[data-act="locknotcancel"]').click();
+  assert.equal(dlg.hasAttribute('open'), false);
+  assert.equal(T.length, 0);
+  assert.ok(a.get('state.lock')); // the lock panel stays open after Cancel
+  doc.querySelector('[data-act="lockgo"]').click();
+  doc.querySelector('[data-act="lockconfirm"]').click();
+  assert.equal(T.length, 1);
+  assert.equal(dlg.hasAttribute('open'), false);
+});
+
+test('win banner says the lines won, and points to the ticket and the operator', () => {
+  const a = loadApp({ settings: { demo: false, workerUrl: '' } });
+  const h = a.get(`(()=>{const date='2026-10-31';
+    tickets.lotto=[{id:'t',lines:[{main:[1,2,3,10,11,12],extra:[]}],dates:[date]}];tickets.euromillions=[];state.live.euromillions=[];
+    state.live.lotto=[{date,round:'Round 1',main:[1,2,3,4,5,6],extra:[7],jackpot:1},{date,round:'Round 2',main:[20,21,22,23,24,25],extra:[26],jackpot:1}];
+    return bannerHTML()})()`);
+  assert.match(h, /Your lines won £10!/);
+  assert.doesNotMatch(h, /You won/);
+  assert.match(h, /Check your ticket with the official lottery operator/);
 });

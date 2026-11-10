@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.3.12';
+const APP_VERSION='1.3.13';
 
 /* ---------- Game definitions ---------- */
 // "since" = first draw of the current format: Lotto went to 59 balls in Oct 2015; EuroMillions to 12 Lucky Stars in Sep 2016.
@@ -414,19 +414,20 @@ function bannerHTML(){
   let h='';
   for(const g of Object.values(GAMES))for(const r of resultsByDate(g)){
     const k=g.key+'|'+r.date;if(seen.has(k))continue;
-    if(!r.wins.length){h+=`<div class="banner quiet"><button class="x" data-act="seen" data-k="${k}">✕</button>🎟️ ${g.name}, ${shortDate(r.date)}: checked your ${r.lines} line${r.lines>1?'s':''} — no wins this time.</div>`;continue}
+    if(!r.wins.length){h+=`<div class="banner quiet"><button class="x" data-act="seen" data-k="${k}">✕</button>🎟️ ${g.name}, ${shortDate(r.date)}: checked the ${r.lines} line${r.lines>1?'s':''} you locked in — no wins this time. Always check your ticket too.</div>`;continue}
     const conf=Array.from({length:18},(_,i)=>`<i class="conf" style="left:${(i*37)%100}%;background:${['#f7c948','#ff5fa8','#3ddc97','#2f86ff','#a066ff'][i%5]};animation-delay:${(i*0.17)%2.8}s"></i>`).join('');
     const jp=r.wins.some(w=>w.jackpot);
     const amt=r.total>0?moneyWin(r.total)+(r.unknown?' + more to come':''):'a prize';
-    h+=`<div class="banner">${conf}<button class="x" data-act="seen" data-k="${k}">✕</button><h2>${jp?'🤯 JACKPOT!':'🎉 You won '+amt+'!'}</h2>
+    h+=`<div class="banner">${conf}<button class="x" data-act="seen" data-k="${k}">✕</button><h2>${jp?'🤯 Your lines matched the jackpot!':'🎉 Your lines won '+amt+'!'}</h2>
       <div class="small">${g.name}, ${fmtDate(r.date)}</div>
       <ul class="r">${r.wins.map(w=>`<li><b>Line ${w.lineNo}</b> · ${w.round?`${w.round}: `:''}matched ${winTxt(g,w)} — <b>${w.known?moneyWin(w.amount):'amount to follow'}</b>${rowBalls(g,w.line.main,w.line.extra,{fit:'fit',mark:(n,isX)=>(isX?w.matchedX:w.matched).has(n)?'got':'miss'})}</li>`).join('')}</ul>
-      ${r.unknown?`<div class="note">EuroMillions prizes are shared out, so some amounts appear once the prize breakdown is published.</div>`:''}</div>`;
+      ${r.unknown?`<div class="note">EuroMillions prizes are shared out, so some amounts appear once the prize breakdown is published.</div>`:''}
+      <div class="claim">⚠️ This only checks the lines you locked in here. <b>Check your ticket with the official lottery operator</b> to confirm any prize and claim it.</div></div>`;
   }
   return h;
 }
 
-// The next draw that matters for the "You're in" card: tonight's draw until its results arrive (if you have lines for it,
+// The next draw that matters for the "Lines locked in" card: tonight's draw until its results arrive (if you have lines for it,
 // or it can still be bought or logged), otherwise the one after.
 function nextEntry(g,now=new Date()){
   const dates=[];for(let i=0;dates.length<2&&i<15;i++){const c=new Date(now);c.setDate(now.getDate()+i);if(g.days.includes(c.getDay()))dates.push(iso(c))}
@@ -444,9 +445,9 @@ function nextEntryHTML(g,now=new Date()){
   const when=e.date===iso(now)?'Tonight':longDate(e.date);
   if(e.lines){
     const sp=[[6,18,0],[22,70,.9],[48,12,1.7],[70,64,.4],[88,22,1.3],[94,74,2.1]].map(([l,t,d])=>`<i class="spark" style="left:${l}%;top:${t}%;animation-delay:${d}s"></i>`).join('');
-    return `<div class="inbanner" data-next="in">${sp}<div class="ib-ticket" aria-hidden="true">🎟️</div><div class="ib-body"><div class="ib-kicker">${g.name}</div><h2>You're in the next draw!</h2><div class="ib-when">${when}</div><div class="ib-lines"><b>${e.lines}</b> line${e.lines===1?'':'s'} locked in</div></div></div>`;
+    return `<div class="inbanner" data-next="in">${sp}<div class="ib-ticket" aria-hidden="true">🎟️</div><div class="ib-body"><div class="ib-kicker">${g.name}</div><h2>Lines locked in for the next draw!</h2><div class="ib-when">${when}</div><div class="ib-lines"><b>${e.lines}</b> line${e.lines===1?'':'s'}</div><div class="ib-note">Bean Machine doesn't enter you. Only a ticket from the official lottery operator does.</div></div></div>`;
   }
-  return `<div class="card outcard" data-next="out"><div class="oc-face" aria-hidden="true">😞</div><div><h2>You're not in the next draw</h2><div class="small muted oc-when">${g.name} · ${e.date===iso(now)?'Tonight':new Date(e.date+'T12:00:00').toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'short'})}</div></div></div>`;
+  return `<div class="card outcard" data-next="out"><div class="oc-face" aria-hidden="true">😞</div><div><h2>No lines locked in yet</h2><div class="small muted oc-when">${g.name} · ${e.date===iso(now)?'Tonight':new Date(e.date+'T12:00:00').toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'short'})}</div></div></div>`;
 }
 
 /* ---------- Backup ---------- */
@@ -933,7 +934,7 @@ function entriesCard(g){
       if(!fresh.length)return '';
       return fresh.map(l=>`<div class="rr">${rowBalls(g,l.main,l.extra,{fit:'fit'})}</div>`).join('')+(canUndo?`<button class="ibtn" style="margin:2px 0 6px" data-act="delticket" data-id="${t.id}">Undo ${t.lines.length>1?`these ${t.lines.length} lines`:'this line'}${t.dates.length>1?` (all ${t.dates.length} draws)`:''}</button>`:'')}).join('')}</div>`}).join('');
   const past=resultsByDate(g).slice(0,8);
-  if(past.length)h+=`<h3>Results</h3>`+past.map(r=>`<div class="ent"><div class="eh"><span>${shortDate(r.date)}</span><span class="${r.wins.length?'won':'muted small'}">${r.wins.length?(r.total>0?moneyWin(r.total):'')+(r.unknown?(r.total>0?' + ':'')+'amount to follow':''):'No win'}</span></div>${r.wins.map(w=>`<div class="win"><div class="small">${w.round?`${w.round}: `:''}matched ${winTxt(g,w)}${w.known?` — ${moneyWin(w.amount)}`:''}</div>${rowBalls(g,w.line.main,w.line.extra,{fit:'fit'})}</div>`).join('')}</div>`).join('');
+  if(past.length)h+=`<h3>Results</h3><p class="small muted" style="margin:0 0 4px">For the lines you locked in here. Your ticket from the official lottery operator is what counts.</p>`+past.map(r=>`<div class="ent"><div class="eh"><span>${shortDate(r.date)}</span><span class="${r.wins.length?'won':'muted small'}">${r.wins.length?(r.total>0?moneyWin(r.total):'')+(r.unknown?(r.total>0?' + ':'')+'amount to follow':''):'No win'}</span></div>${r.wins.map(w=>`<div class="win"><div class="small">${w.round?`${w.round}: `:''}matched ${winTxt(g,w)}${w.known?` — ${moneyWin(w.amount)}`:''}</div>${rowBalls(g,w.line.main,w.line.extra,{fit:'fit'})}</div>`).join('')}</div>`).join('');
   return h+`</div>`;
 }
 function viewGen(embedded){
@@ -1311,7 +1312,10 @@ document.addEventListener('click',async e=>{
     if(a==='lockcancel')state.lock=null;
     if(a==='locksel'){state.lock.sel.has(li)?state.lock.sel.delete(li):state.lock.sel.add(li);const y=scrollY;render();scrollTo(0,y);return}
     if(a==='lockdate'){const d=t.dataset.d;state.lock.dates.has(d)?state.lock.dates.delete(d):state.lock.dates.add(d);const y=scrollY;render();scrollTo(0,y);return}
-    if(a==='lockgo'){const lk=state.lock,idx=lockable(g,lk);if(!idx.length||!lk.dates.size){toast('Pick at least one new line and one draw');return}
+    if(a==='lockgo'){const lk=state.lock;if(!lockable(g,lk).length||!lk.dates.size){toast('Pick at least one new line and one draw');return}
+      openLockNotice(lockable(g,lk).length,lk.dates.size);return}
+    if(a==='locknotcancel'){closeLockNotice();return}
+    if(a==='lockconfirm'){closeLockNotice();const lk=state.lock;if(!lk)return;const idx=lockable(g,lk);if(!idx.length||!lk.dates.size){toast('Pick at least one new line and one draw');return}
       const groups=new Map();
       [...lk.dates].sort().forEach(dt=>{const have=linesForDate(g,dt),add=idx.filter(i=>!have.some(x=>sameLine(x,L[i])));if(!add.length)return;
         const k=add.join(',');(groups.get(k)||groups.set(k,{add,dates:[]}).get(k)).dates.push(dt)});
@@ -1390,6 +1394,18 @@ function installBanner(){
   return '';
 }
 const SHARE_ICON='<svg class="share-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M8 7l4-4 4 4M6 11H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-1"/></svg>';
+// Shown every time lines are locked in: the app keeps a record of lines, it never buys or enters anything
+function openLockNotice(n,d){
+  let el=$('#dlg-lock');
+  if(!el){el=document.createElement('dialog');el.id='dlg-lock';el.className='sheet locknote';document.body.appendChild(el)}
+  el.innerHTML=`<h2>🔒 Before you lock in</h2>
+    <p><b>Bean Machine doesn't buy, submit or enter anything.</b> Locking in just saves ${n===1?'this line':'these lines'} on this phone, so ${n===1?'it':'they'} can be checked after the draw.</p>
+    <p>To be in a draw you need a ticket from the <b>official lottery operator</b>. Your ticket is what counts, not this app.</p>
+    <button class="btn block" data-act="lockconfirm">Got it — lock in ${n} line${n===1?'':'s'} × ${d} draw${d===1?'':'s'}</button>
+    <button class="btn ghost block" style="margin-top:8px" data-act="locknotcancel">Cancel</button>`;
+  if(el.showModal)el.showModal();else el.setAttribute('open','');
+}
+function closeLockNotice(){const el=$('#dlg-lock');if(!el)return;if(el.close&&el.open)el.close();el.removeAttribute('open')}
 function openInstallHelp(){
   let d=$('#dlg-install');
   if(!d){d=document.createElement('dialog');d.id='dlg-install';d.className='sheet';document.body.appendChild(d)}
