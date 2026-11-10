@@ -923,3 +923,45 @@ test('during the grace period tonight can be locked in and undone, and Saturday 
   a.get('clearInterval(graceTimer)');
   assert.equal(a.errors.length, 0, a.errors.map(e => e.message).join('\n'));
 });
+
+test('next-draw card: gold when lines are locked in, sad when not, each game on its own', () => {
+  const a = loadApp({ settings: { demo: false, workerUrl: '' } });
+  const r = JSON.parse(a.get(`(()=>{
+    const at = s => new Date(s);
+    const line6 = { main: [1, 2, 3, 4, 5, 6], extra: [] }, line6b = { main: [7, 8, 9, 10, 11, 12], extra: [] };
+    // Tue 10 Nov 2026: EuroMillions draws tonight, Lotto next on Wed 11 Nov
+    tickets.lotto = [{ id: 'a', lines: [line6, line6b], dates: ['2026-11-11'] }, { id: 'b', lines: [line6], dates: ['2026-11-11', '2026-11-14'] }];
+    tickets.euromillions = []; state.live.lotto = []; state.live.euromillions = [];
+    const noon = at('2026-11-10T12:00:00'), late = at('2026-11-10T21:30:00');
+    const out = {
+      lotto: nextEntry(GAMES.lotto, noon), em: nextEntry(GAMES.euromillions, noon), emLate: nextEntry(GAMES.euromillions, late),
+      lottoHTML: nextEntryHTML(GAMES.lotto, noon), emHTML: nextEntryHTML(GAMES.euromillions, noon) };
+    // Lines locked for tonight's EuroMillions stay "in" after sales close, until the results arrive
+    tickets.euromillions = [{ id: 'c', lines: [{ main: [1, 2, 3, 4, 5], extra: [1, 2] }], dates: ['2026-11-10'] }];
+    out.emInLate = nextEntry(GAMES.euromillions, late);
+    out.emInHTML = nextEntryHTML(GAMES.euromillions, noon);
+    state.live.euromillions = [{ date: '2026-11-10', main: [1, 2, 3, 4, 5], extra: [1, 2], jackpot: 1 }];
+    out.emDrawn = nextEntry(GAMES.euromillions, late);
+    return JSON.stringify(out);
+  })()`));
+  assert.deepEqual(r.lotto, { date: '2026-11-11', lines: 2 }); // the same line locked twice counts once
+  assert.deepEqual(r.em, { date: '2026-11-10', lines: 0 });
+  assert.deepEqual(r.emLate, { date: '2026-11-13', lines: 0 }); // too late for tonight, so it points at Friday
+  assert.deepEqual(r.emInLate, { date: '2026-11-10', lines: 1 });
+  assert.deepEqual(r.emDrawn, { date: '2026-11-13', lines: 0 });
+  assert.match(r.lottoHTML, /data-next="in"/);
+  assert.match(r.lottoHTML, /You're in the next draw!/);
+  assert.match(r.lottoHTML, /Wednesday 11 November/);
+  assert.match(r.lottoHTML, /<b>2<\/b> lines locked in/);
+  assert.match(r.emHTML, /data-next="out"/);
+  assert.match(r.emHTML, /Tonight · Tuesday 10 November/);
+  assert.match(r.emHTML, /data-view="gen"/);
+  assert.match(r.emInHTML, /<b>1<\/b> line locked in/);
+});
+
+test('Latest page shows the next-draw card for the selected game', () => {
+  const a = loadApp({ settings: { demo: true, workerUrl: '' } });
+  const shown = a.get(`(()=>{tickets.lotto=[];tickets.euromillions=[];state.view='latest';state.game='lotto';render();
+    return !!document.querySelector('#view [data-next]')})()`);
+  assert.equal(shown, true);
+});
