@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.3.10';
+const APP_VERSION='1.3.11';
 
 /* ---------- Game definitions ---------- */
 // "since" = first draw of the current format: Lotto went to 59 balls in Oct 2015; EuroMillions to 12 Lucky Stars in Sep 2016.
@@ -426,6 +426,29 @@ function bannerHTML(){
   return h;
 }
 
+// The next draw that matters for the "You're in" card: tonight's draw until its results arrive (if you have lines for it,
+// or it can still be bought or logged), otherwise the one after.
+function nextEntry(g,now=new Date()){
+  const dates=[];for(let i=0;dates.length<2&&i<15;i++){const c=new Date(now);c.setDate(now.getDate()+i);if(g.days.includes(c.getDay()))dates.push(iso(c))}
+  const today=iso(now);
+  for(const d of dates){
+    if(isDrawn(g,d))continue;
+    const n=linesForDate(g,d).length;
+    if(n||d!==today||now<new Date(`${d}T${GRACE_END}:00`))return{date:d,lines:n};
+  }
+  return null;
+}
+const longDate=s=>new Date(s+'T12:00:00').toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'});
+function nextEntryHTML(g,now=new Date()){
+  const e=nextEntry(g,now);if(!e)return '';
+  const when=e.date===iso(now)?`Tonight · ${longDate(e.date)}`:longDate(e.date);
+  if(e.lines){
+    const sp=[[6,18,0],[22,70,.9],[48,12,1.7],[70,64,.4],[88,22,1.3],[94,74,2.1]].map(([l,t,d])=>`<i class="spark" style="left:${l}%;top:${t}%;animation-delay:${d}s"></i>`).join('');
+    return `<div class="inbanner" data-next="in">${sp}<div class="ib-ticket" aria-hidden="true">🎟️</div><div class="ib-body"><div class="ib-kicker">${g.name}</div><h2>You're in the next draw!</h2><div class="ib-when">${when}</div><div class="ib-lines"><b>${e.lines}</b> line${e.lines===1?'':'s'} locked in</div></div></div>`;
+  }
+  return `<div class="card outcard" data-next="out"><div class="oc-face" aria-hidden="true">😞</div><div><h2>You're not in the next draw</h2><div class="small muted oc-when">${g.name} · ${e.date===iso(now)?'Tonight':new Date(e.date+'T12:00:00').toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'short'})}</div></div></div>`;
+}
+
 /* ---------- Backup ---------- */
 const BACKUP_APPS=['beanmachine','oddly','lotto-lab'];
 function exportBackup(){
@@ -595,7 +618,7 @@ function viewLatest(){
   const anim=state.animKey!==g.key+d.date;state.animKey=g.key+d.date;
   const lk='L'+g.key+d.date,lopen=state.open.has(lk);
   const meta=drawMeta;
-  return `${ib}${bannerHTML()}${jack}<div class="card latest${lopen?' open':''}" data-grp="${lk}"><h2>${g.name} · ${fmtDate(d.date)}<span class="chev">▸</span></h2>${[...ls].reverse().map(x=>`${x.round?`<h3>${x.round}</h3>`:''}${rowBalls(g,x.main,x.extra,{fit:'fit-lg',anim})}${settings.demo?'':crowdLine(g,x)}${lopen&&(x.prizes||x.machine||x.ballSet||x.drawNo||(x.src&&x.src!=='api')||settings.demo)?`<div class="pb">${prizeTable(g,x)}${meta(x)}</div>`:''}`).join('')}
+  return `${ib}${bannerHTML()}${nextEntryHTML(g)}${jack}<div class="card latest${lopen?' open':''}" data-grp="${lk}"><h2>${g.name} · ${fmtDate(d.date)}<span class="chev">▸</span></h2>${[...ls].reverse().map(x=>`${x.round?`<h3>${x.round}</h3>`:''}${rowBalls(g,x.main,x.extra,{fit:'fit-lg',anim})}${settings.demo?'':crowdLine(g,x)}${lopen&&(x.prizes||x.machine||x.ballSet||x.drawNo||(x.src&&x.src!=='api')||settings.demo)?`<div class="pb">${prizeTable(g,x)}${meta(x)}</div>`:''}`).join('')}
   ${nd?`<div class="note">Next draw: ${nd.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'short'})}</div>`:''}</div>
   <div class="card"><h2>Recent draws</h2>${recentHTML(g,ds)}</div>`;
 }
