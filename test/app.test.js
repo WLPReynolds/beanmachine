@@ -955,7 +955,7 @@ test('next-draw card: gold when lines are locked in, sad when not, each game on 
   assert.match(r.lottoHTML, /<b>2<\/b> lines locked in/);
   assert.match(r.emHTML, /data-next="out"/);
   assert.match(r.emHTML, /Tonight · Tuesday 10 November/);
-  assert.match(r.emHTML, /data-view="gen"/);
+  assert.doesNotMatch(r.emHTML, /<button/); // a reminder only, no button
   assert.match(r.emInHTML, /<b>1<\/b> line locked in/);
 });
 
