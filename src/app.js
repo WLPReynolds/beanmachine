@@ -417,8 +417,10 @@ function bannerHTML(){
     if(!r.wins.length){h+=`<div class="banner quiet"><button class="x" data-act="seen" data-k="${k}">✕</button>🎟️ ${g.name}, ${shortDate(r.date)}: checked the ${r.lines} line${r.lines>1?'s':''} you locked in — no wins this time. Always check your ticket too.</div>`;continue}
     const conf=Array.from({length:18},(_,i)=>`<i class="conf" style="left:${(i*37)%100}%;background:${['#f7c948','#ff5fa8','#3ddc97','#2f86ff','#a066ff'][i%5]};animation-delay:${(i*0.17)%2.8}s"></i>`).join('');
     const jp=r.wins.some(w=>w.jackpot);
-    const amt=r.total>0?moneyWin(r.total)+(r.unknown?' + more to come':''):'a prize';
-    h+=`<div class="banner">${conf}<button class="x" data-act="seen" data-k="${k}">✕</button><h2>${jp?'🤯 Your lines matched the jackpot!':'🎉 Your lines won '+amt+'!'}</h2>
+    // "match", not "won": the app only knows the lines you locked in, not what's on your ticket
+    const more=r.unknown?', with more to come':'',one=r.wins.length===1;
+    const head=jp?'🤯 Your lines match the jackpot!':r.total>0?`🎉 Your lines match ${one?`a ${moneyWin(r.total)} prize`:`${moneyWin(r.total)} in prizes`}${more}!`:`🎉 Your lines match ${one?'a prize':'prizes'}!`;
+    h+=`<div class="banner">${conf}<button class="x" data-act="seen" data-k="${k}">✕</button><h2>${head}</h2>
       <div class="small">${g.name}, ${fmtDate(r.date)}</div>
       <ul class="r">${r.wins.map(w=>`<li><b>Line ${w.lineNo}</b> · ${w.round?`${w.round}: `:''}matched ${winTxt(g,w)} — <b>${w.known?moneyWin(w.amount):'amount to follow'}</b>${rowBalls(g,w.line.main,w.line.extra,{fit:'fit',mark:(n,isX)=>(isX?w.matchedX:w.matched).has(n)?'got':'miss'})}</li>`).join('')}</ul>
       ${r.unknown?`<div class="note">EuroMillions prizes are shared out, so some amounts appear once the prize breakdown is published.</div>`:''}
@@ -1313,9 +1315,10 @@ document.addEventListener('click',async e=>{
     if(a==='locksel'){state.lock.sel.has(li)?state.lock.sel.delete(li):state.lock.sel.add(li);const y=scrollY;render();scrollTo(0,y);return}
     if(a==='lockdate'){const d=t.dataset.d;state.lock.dates.has(d)?state.lock.dates.delete(d):state.lock.dates.add(d);const y=scrollY;render();scrollTo(0,y);return}
     if(a==='lockgo'){const lk=state.lock;if(!lockable(g,lk).length||!lk.dates.size){toast('Pick at least one new line and one draw');return}
-      openLockNotice(lockable(g,lk).length,lk.dates.size);return}
+      if(!LS.get('lockNoteOff',false)){openLockNotice(lockable(g,lk).length,lk.dates.size);return}}
     if(a==='locknotcancel'){closeLockNotice();return}
-    if(a==='lockconfirm'){closeLockNotice();const lk=state.lock;if(!lk)return;const idx=lockable(g,lk);if(!idx.length||!lk.dates.size){toast('Pick at least one new line and one draw');return}
+    if(a==='lockconfirm'){if($('#locknoteoff')?.checked)LS.set('lockNoteOff',true);closeLockNotice()}
+    if(a==='lockgo'||a==='lockconfirm'){const lk=state.lock;if(!lk)return;const idx=lockable(g,lk);if(!idx.length||!lk.dates.size){toast('Pick at least one new line and one draw');return}
       const groups=new Map();
       [...lk.dates].sort().forEach(dt=>{const have=linesForDate(g,dt),add=idx.filter(i=>!have.some(x=>sameLine(x,L[i])));if(!add.length)return;
         const k=add.join(',');(groups.get(k)||groups.set(k,{add,dates:[]}).get(k)).dates.push(dt)});
@@ -1401,6 +1404,7 @@ function openLockNotice(n,d){
   el.innerHTML=`<h2>🔒 Before you lock in</h2>
     <p><b>Bean Machine doesn't buy, submit or enter anything.</b> Locking in just saves ${n===1?'this line':'these lines'} on this phone, so ${n===1?'it':'they'} can be checked after the draw.</p>
     <p>To be in a draw you need a ticket from the <b>official lottery operator</b>. Your ticket is what counts, not this app.</p>
+    <label class="noshow"><input type="checkbox" id="locknoteoff"> Don't show this again</label>
     <button class="btn block" data-act="lockconfirm">Got it — lock in ${n} line${n===1?'':'s'} × ${d} draw${d===1?'':'s'}</button>
     <button class="btn ghost block" style="margin-top:8px" data-act="locknotcancel">Cancel</button>`;
   if(el.showModal)el.showModal();else el.setAttribute('open','');

@@ -993,6 +993,29 @@ test('locking in lines asks first, and says the app never buys or enters anythin
   doc.querySelector('[data-act="lockconfirm"]').click();
   assert.equal(T.length, 1);
   assert.equal(dlg.hasAttribute('open'), false);
+  // "Don't show this again": ticked once, later locks go straight through
+  a.get("myLines.lotto.push({main:[7,8,9,10,11,12],extra:[]});render();");
+  doc.querySelector('[data-act="lockopen"]').click();
+  doc.querySelector('[data-act="lockgo"]').click();
+  doc.querySelector('#locknoteoff').checked = true;
+  doc.querySelector('[data-act="lockconfirm"]').click();
+  assert.equal(T.length, 2);
+  assert.equal(a.get("LS.get('lockNoteOff',false)"), true);
+  a.get("myLines.lotto.push({main:[13,14,15,16,17,18],extra:[]});render();");
+  doc.querySelector('[data-act="lockopen"]').click();
+  doc.querySelector('[data-act="lockgo"]').click();
+  assert.equal(dlg.hasAttribute('open'), false);
+  assert.equal(T.length, 3);
+});
+
+test('win headline: one prize, several prizes, and the jackpot', () => {
+  const a = loadApp({ settings: { demo: false, workerUrl: '' } });
+  const head = (lines, jackpot) => a.get(`(()=>{const date='2026-10-31';
+    tickets.lotto=[{id:'t',lines:${JSON.stringify(lines)},dates:[date]}];tickets.euromillions=[];state.live.euromillions=[];
+    state.live.lotto=[{date,round:'Round 1',main:[1,2,3,4,5,6],extra:[7],jackpot:${jackpot}},{date,round:'Round 2',main:[20,21,22,23,24,25],extra:[26],jackpot:1}];
+    seen.clear();const d=document.createElement('div');d.innerHTML=bannerHTML();return d.querySelector('h2').textContent})()`);
+  assert.equal(head([{ main: [1, 2, 3, 10, 11, 12], extra: [] }, { main: [1, 2, 3, 13, 14, 15], extra: [] }], 1), '🎉 Your lines match £20 in prizes!');
+  assert.equal(head([{ main: [1, 2, 3, 4, 5, 6], extra: [] }], 5000000), '🤯 Your lines match the jackpot!');
 });
 
 test('win banner says the lines won, and points to the ticket and the operator', () => {
@@ -1001,7 +1024,7 @@ test('win banner says the lines won, and points to the ticket and the operator',
     tickets.lotto=[{id:'t',lines:[{main:[1,2,3,10,11,12],extra:[]}],dates:[date]}];tickets.euromillions=[];state.live.euromillions=[];
     state.live.lotto=[{date,round:'Round 1',main:[1,2,3,4,5,6],extra:[7],jackpot:1},{date,round:'Round 2',main:[20,21,22,23,24,25],extra:[26],jackpot:1}];
     return bannerHTML()})()`);
-  assert.match(h, /Your lines won £10!/);
-  assert.doesNotMatch(h, /You won/);
+  assert.match(h, /Your lines match a £10 prize!/);
+  assert.doesNotMatch(h, /won/i);
   assert.match(h, /Check your ticket with the official lottery operator/);
 });
