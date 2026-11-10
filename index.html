@@ -110,7 +110,7 @@ background:linear-gradient(135deg,#fff3b0 0%,#f7c948 35%,#e0a514 60%,#ffe48a 100
 .inbanner h2{margin:2px 0 4px;font-size:21px;font-weight:900;color:#3a2300;text-shadow:0 1px 0 rgba(255,255,255,.6)}
 .ib-when{font-weight:800;font-size:15px}.ib-lines{margin-top:6px;display:inline-block;padding:3px 10px;border-radius:99px;background:rgba(58,35,0,.14);font-size:13px;font-weight:700}
 .outcard{display:flex;gap:14px;align-items:flex-start;background:rgba(120,130,160,.1);border-style:dashed;filter:saturate(.6)}
-.outcard h2{color:var(--muted)}.oc-face{font-size:38px;flex:none;filter:grayscale(.5);opacity:.85;animation:droop 4s ease-in-out infinite}
+.outcard{align-items:center}.outcard>div:last-child{min-width:0}.outcard h2{color:var(--muted);margin-bottom:4px}.oc-when{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.oc-face{font-size:38px;flex:none;filter:grayscale(.5);opacity:.85;animation:droop 4s ease-in-out infinite}
 @keyframes droop{0%,100%{transform:translateY(0) rotate(0)}50%{transform:translateY(3px) rotate(-6deg)}}
 @media (prefers-reduced-motion:reduce){.inbanner:before,.ib-ticket,.oc-face,.inbanner .spark{animation:none}}
 .conf{position:absolute;top:-12px;width:8px;height:12px;border-radius:2px;animation:fall 2.8s linear infinite;opacity:.9;pointer-events:none}

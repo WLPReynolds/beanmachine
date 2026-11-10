@@ -934,7 +934,7 @@ test('next-draw card: gold when lines are locked in, sad when not, each game on 
     tickets.euromillions = []; state.live.lotto = []; state.live.euromillions = [];
     const noon = at('2026-11-10T12:00:00'), late = at('2026-11-10T21:30:00');
     const out = {
-      lotto: nextEntry(GAMES.lotto, noon), em: nextEntry(GAMES.euromillions, noon), emLate: nextEntry(GAMES.euromillions, late),
+      lotto: nextEntry(GAMES.lotto, noon), em: nextEntry(GAMES.euromillions, noon), emLate: nextEntry(GAMES.euromillions, late), emLateHTML: nextEntryHTML(GAMES.euromillions, late),
       lottoHTML: nextEntryHTML(GAMES.lotto, noon), emHTML: nextEntryHTML(GAMES.euromillions, noon) };
     // Lines locked for tonight's EuroMillions stay "in" after sales close, until the results arrive
     tickets.euromillions = [{ id: 'c', lines: [{ main: [1, 2, 3, 4, 5], extra: [1, 2] }], dates: ['2026-11-10'] }];
@@ -954,7 +954,9 @@ test('next-draw card: gold when lines are locked in, sad when not, each game on 
   assert.match(r.lottoHTML, /Wednesday 11 November/);
   assert.match(r.lottoHTML, /<b>2<\/b> lines locked in/);
   assert.match(r.emHTML, /data-next="out"/);
-  assert.match(r.emHTML, /Tonight · Tuesday 10 November/);
+  assert.match(r.emHTML, /EuroMillions · Tonight</);
+  assert.doesNotMatch(r.emHTML, /Fancy a go/);
+  assert.match(r.emLateHTML, /EuroMillions · Friday 13 Nov</);
   assert.doesNotMatch(r.emHTML, /<button/); // a reminder only, no button
   assert.match(r.emInHTML, /<b>1<\/b> line locked in/);
 });

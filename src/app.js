@@ -446,7 +446,7 @@ function nextEntryHTML(g,now=new Date()){
     const sp=[[6,18,0],[22,70,.9],[48,12,1.7],[70,64,.4],[88,22,1.3],[94,74,2.1]].map(([l,t,d])=>`<i class="spark" style="left:${l}%;top:${t}%;animation-delay:${d}s"></i>`).join('');
     return `<div class="inbanner" data-next="in">${sp}<div class="ib-ticket" aria-hidden="true">🎟️</div><div class="ib-body"><div class="ib-kicker">${g.name}</div><h2>You're in the next draw!</h2><div class="ib-when">${when}</div><div class="ib-lines"><b>${e.lines}</b> line${e.lines===1?'':'s'} locked in</div></div></div>`;
   }
-  return `<div class="card outcard" data-next="out"><div class="oc-face" aria-hidden="true">😞</div><div><h2>You're not in the next draw</h2><div class="small muted">${g.name} · ${when}</div><p class="small" style="margin:8px 0 0">No lines locked in yet. Fancy a go?</p></div></div>`;
+  return `<div class="card outcard" data-next="out"><div class="oc-face" aria-hidden="true">😞</div><div><h2>You're not in the next draw</h2><div class="small muted oc-when">${g.name} · ${e.date===iso(now)?'Tonight':new Date(e.date+'T12:00:00').toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'short'})}</div></div></div>`;
 }
 
 /* ---------- Backup ---------- */
