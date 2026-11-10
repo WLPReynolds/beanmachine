@@ -959,6 +959,8 @@ test('next-draw card: gold when lines are locked in, sad when not, each game on 
   assert.match(r.emLateHTML, /EuroMillions · Friday 13 Nov</);
   assert.doesNotMatch(r.emHTML, /<button/); // a reminder only, no button
   assert.match(r.emInHTML, /<b>1<\/b> line locked in/);
+  assert.match(r.emInHTML, /class="ib-when">Tonight<\/div>/); // just "Tonight", not the date as well
+  assert.doesNotMatch(r.lottoHTML, /Tonight/);
 });
 
 test('Latest page shows the next-draw card for the selected game', () => {

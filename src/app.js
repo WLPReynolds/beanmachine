@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.3.11';
+const APP_VERSION='1.3.12';
 
 /* ---------- Game definitions ---------- */
 // "since" = first draw of the current format: Lotto went to 59 balls in Oct 2015; EuroMillions to 12 Lucky Stars in Sep 2016.
@@ -441,7 +441,7 @@ function nextEntry(g,now=new Date()){
 const longDate=s=>new Date(s+'T12:00:00').toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'});
 function nextEntryHTML(g,now=new Date()){
   const e=nextEntry(g,now);if(!e)return '';
-  const when=e.date===iso(now)?`Tonight · ${longDate(e.date)}`:longDate(e.date);
+  const when=e.date===iso(now)?'Tonight':longDate(e.date);
   if(e.lines){
     const sp=[[6,18,0],[22,70,.9],[48,12,1.7],[70,64,.4],[88,22,1.3],[94,74,2.1]].map(([l,t,d])=>`<i class="spark" style="left:${l}%;top:${t}%;animation-delay:${d}s"></i>`).join('');
     return `<div class="inbanner" data-next="in">${sp}<div class="ib-ticket" aria-hidden="true">🎟️</div><div class="ib-body"><div class="ib-kicker">${g.name}</div><h2>You're in the next draw!</h2><div class="ib-when">${when}</div><div class="ib-lines"><b>${e.lines}</b> line${e.lines===1?'':'s'} locked in</div></div></div>`;
