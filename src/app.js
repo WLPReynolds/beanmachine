@@ -419,8 +419,10 @@ function bannerHTML(){
     const jp=r.wins.some(w=>w.jackpot);
     // "match", not "won": the app only knows the lines you locked in, not what's on your ticket
     const more=r.unknown?', with more to come':'',one=r.wins.length===1;
-    const head=jp?'🤯 Your lines match the jackpot!':r.total>0?`🎉 Your lines match ${one?`a ${moneyWin(r.total)} prize`:`${moneyWin(r.total)} in prizes`}${more}!`:`🎉 Your lines match ${one?'a prize':'prizes'}!`;
-    h+=`<div class="banner">${conf}<button class="x" data-act="seen" data-k="${k}">✕</button><h2>${head}</h2>
+    // Two lines, so any amount (£1 or £100,000) sits on its own line: "Your lines match a" / "£10 prize!"
+    const [l1,l2]=jp?['🤯 Your lines match','the jackpot!']:r.total>0?(one?['🎉 Your lines match a',`${moneyWin(r.total)} prize${more}!`]:['🎉 Your lines match',`${moneyWin(r.total)} in prizes${more}!`]):(one?['🎉 Your lines match a','prize!']:['🎉 Your lines match','prizes!']);
+    const head=`<span class="wh1">${l1}</span> <span class="wh2">${l2}</span>`;
+    h+=`<div class="banner">${conf}<button class="x" data-act="seen" data-k="${k}">✕</button><h2 class="winhead">${head}</h2>
       <div class="small">${g.name}, ${fmtDate(r.date)}</div>
       <ul class="r">${r.wins.map(w=>`<li><b>Line ${w.lineNo}</b> · ${w.round?`${w.round}: `:''}matched ${winTxt(g,w)} — <b>${w.known?moneyWin(w.amount):'amount to follow'}</b>${rowBalls(g,w.line.main,w.line.extra,{fit:'fit',mark:(n,isX)=>(isX?w.matchedX:w.matched).has(n)?'got':'miss'})}</li>`).join('')}</ul>
       ${r.unknown?`<div class="note">EuroMillions prizes are shared out, so some amounts appear once the prize breakdown is published.</div>`:''}

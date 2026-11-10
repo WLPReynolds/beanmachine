@@ -1024,7 +1024,7 @@ test('win banner says the lines won, and points to the ticket and the operator',
     tickets.lotto=[{id:'t',lines:[{main:[1,2,3,10,11,12],extra:[]}],dates:[date]}];tickets.euromillions=[];state.live.euromillions=[];
     state.live.lotto=[{date,round:'Round 1',main:[1,2,3,4,5,6],extra:[7],jackpot:1},{date,round:'Round 2',main:[20,21,22,23,24,25],extra:[26],jackpot:1}];
     return bannerHTML()})()`);
-  assert.match(h, /Your lines match a £10 prize!/);
+  assert.match(h, /<span class="wh1">🎉 Your lines match a<\/span> <span class="wh2">£10 prize!<\/span>/);
   assert.doesNotMatch(h, /won/i);
   assert.match(h, /Check your ticket with the official lottery operator/);
 });
