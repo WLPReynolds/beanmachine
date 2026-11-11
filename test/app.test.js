@@ -820,6 +820,28 @@ test('win banner numbers each winning line and marks only the balls that matched
   assert.deepEqual(plain[1].miss, []);
 });
 
+test('win banner shows a ball that only matched the bonus in red, not dimmed', () => {
+  const a = loadApp({ settings: { demo: false, workerUrl: '' } });
+  const out = a.get(`(()=>{
+    const date = '2026-11-11';
+    tickets.lotto = [{ id: 't', lines: [{ main: [6, 21, 23, 26, 44, 50], extra: [] }], dates: [date] }];
+    state.live.lotto = [
+      { date, round: 'Round 1', main: [4, 5, 13, 18, 25, 29], extra: [16], jackpot: 1 },
+      { date, round: 'Round 2', main: [6, 26, 38, 53, 57, 59], extra: [21], jackpot: 1 }];
+    tickets.euromillions = []; state.live.euromillions = [];
+    const root = document.createElement('div'); root.innerHTML = bannerHTML();
+    const li = root.querySelector('.r li');
+    const pick = c => [...li.querySelectorAll('.' + c)].map(x => +x.textContent);
+    return { text: li.textContent.replace(/\\s+/g, ' ').trim(), got: pick('got'), bonus: pick('bonushit'), miss: pick('miss'), note: root.textContent.includes('Red ball = the bonus ball') };
+  })()`);
+  const r = JSON.parse(a.window.JSON.stringify(out));
+  assert.match(r.text, /^Line 1 · Round 2: matched 2/);
+  assert.deepEqual(r.got, [6, 26]);
+  assert.deepEqual(r.bonus, [21]);
+  assert.deepEqual(r.miss, [23, 44, 50]);
+  assert.ok(r.note);
+});
+
 test('win banner marks EuroMillions stars separately from main numbers', () => {
   const a = loadApp({ settings: { demo: false, workerUrl: '' } });
   const out = a.get(`(()=>{

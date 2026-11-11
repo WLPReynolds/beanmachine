@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.3.13';
+const APP_VERSION='1.3.14';
 
 /* ---------- Game definitions ---------- */
 // "since" = first draw of the current format: Lotto went to 59 balls in Oct 2015; EuroMillions to 12 Lucky Stars in Sep 2016.
@@ -398,7 +398,7 @@ function linesResult(g,lines,date){
   const rs=liveFor(g,date).sort((a,b)=>String(a.round||'').localeCompare(String(b.round||''))),wins=[];
   lines.forEach((l,li)=>rs.forEach(d=>{
     const m=inter(l.main,d.main),st=g.sepPool?inter(l.extra,d.extra):(m===5&&d.extra.some(x=>l.main.includes(x))?1:0);
-    const pr=prizeFor(g,d,m+'+'+st);if(pr)wins.push({li,lineNo:li+1,line:l,round:d.round,m,st,matched:new Set(l.main.filter(n=>d.main.includes(n)||(st&&!g.sepPool&&d.extra.includes(n)))),matchedX:new Set((g.sepPool?l.extra:[]).filter(n=>d.extra.includes(n))),...pr});
+    const pr=prizeFor(g,d,m+'+'+st);if(pr)wins.push({li,lineNo:li+1,line:l,round:d.round,m,st,matched:new Set(l.main.filter(n=>d.main.includes(n)||(st&&!g.sepPool&&d.extra.includes(n)))),matchedX:new Set((g.sepPool?l.extra:[]).filter(n=>d.extra.includes(n))),bonusOnly:new Set(g.sepPool?[]:l.main.filter(n=>!d.main.includes(n)&&d.extra.includes(n)&&!(st&&d.extra.includes(n)))),...pr});
   }));
   return{wins,total:wins.reduce((a,w)=>a+(w.known?w.amount:0),0),unknown:wins.some(w=>!w.known)};
 }
@@ -424,7 +424,8 @@ function bannerHTML(){
     const head=`<span class="wh1">${l1}</span> <span class="wh2">${l2}</span>`;
     h+=`<div class="banner">${conf}<button class="x" data-act="seen" data-k="${k}">✕</button><h2 class="winhead">${head}</h2>
       <div class="small">${g.name}, ${fmtDate(r.date)}</div>
-      <ul class="r">${r.wins.map(w=>`<li><b>Line ${w.lineNo}</b> · ${w.round?`${w.round}: `:''}matched ${winTxt(g,w)} — <b>${w.known?moneyWin(w.amount):'amount to follow'}</b>${rowBalls(g,w.line.main,w.line.extra,{fit:'fit',mark:(n,isX)=>(isX?w.matchedX:w.matched).has(n)?'got':'miss'})}</li>`).join('')}</ul>
+      <ul class="r">${r.wins.map(w=>`<li><b>Line ${w.lineNo}</b> · ${w.round?`${w.round}: `:''}matched ${winTxt(g,w)} — <b>${w.known?moneyWin(w.amount):'amount to follow'}</b>${rowBalls(g,w.line.main,w.line.extra,{fit:'fit',mark:(n,isX)=>(isX?w.matchedX:w.matched).has(n)?'got':w.bonusOnly&&w.bonusOnly.has(n)?'bonushit':'miss'})}</li>`).join('')}</ul>
+      ${r.wins.some(w=>w.bonusOnly&&w.bonusOnly.size)?`<div class="small muted">Red ball = the bonus ball. It doesn't count towards this prize.</div>`:''}
       ${r.unknown?`<div class="note">EuroMillions prizes are shared out, so some amounts appear once the prize breakdown is published.</div>`:''}
       <div class="claim">⚠️ This only checks the lines you locked in here. <b>Check your ticket with the official lottery operator</b> to confirm any prize and claim it.</div></div>`;
   }
