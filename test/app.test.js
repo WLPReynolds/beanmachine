@@ -1110,3 +1110,28 @@ test('win banner says the lines won, and points to the ticket and the operator',
   assert.doesNotMatch(h, /won/i);
   assert.match(h, /Check your ticket with the official lottery operator/);
 });
+
+test('"Use anyway" keeps a line with last-draw numbers for the next draw, and "Show swap" brings the swap back', () => {
+  const a = loadApp(), doc = a.window.document;
+  const lastMain = a.get("JSON.stringify(lastDrawn(GAMES.lotto,draws(GAMES.lotto)).m.size)");
+  assert.ok(+lastMain > 0);
+  a.get(`state.game='lotto';state.view='gen';tickets.lotto=[];
+    const hit=[...lastDrawn(GAMES.lotto,draws(GAMES.lotto)).m][0];
+    const rest=[...Array(59).keys()].map(i=>i+1).filter(n=>!lastDrawn(GAMES.lotto,draws(GAMES.lotto)).m.has(n)).slice(0,5);
+    myLines.lotto=[{main:[hit,...rest].sort((x,y)=>x-y),extra:[]}];render();`);
+  const before = a.get('JSON.stringify(myLines.lotto[0].main)');
+  assert.ok(doc.querySelector('#view .ball.hit'), 'drawn number struck through');
+  doc.querySelector('[data-act="keepline"]').click();
+  assert.equal(a.get('JSON.stringify(myLines.lotto[0].main)'), before, 'line unchanged');
+  assert.equal(a.get('myLines.lotto[0].sugg.kept'), true);
+  assert.ok(!doc.querySelector('#view .ball.hit'), 'no strike-through once kept');
+  assert.ok(!doc.querySelector('[data-act="acceptline"]'));
+  assert.match(doc.querySelector('#view').textContent, /your call/);
+  // Survives a redraw, and a backup-style reload of the same line
+  a.get('render()');
+  assert.ok(doc.querySelector('[data-act="unkeepline"]'));
+  doc.querySelector('[data-act="unkeepline"]').click();
+  assert.ok(doc.querySelector('[data-act="acceptline"]'));
+  assert.ok(doc.querySelector('#view .ball.hit'));
+  assert.equal(a.errors.length, 0, a.errors.map(e => e.message).join('\n'));
+});

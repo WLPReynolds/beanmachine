@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.3.17';
+const APP_VERSION='1.3.18';
 
 /* ---------- Game definitions ---------- */
 // "since" = first draw of the current format: Lotto went to 59 balls in Oct 2015; EuroMillions to 12 Lucky Stars in Sep 2016.
@@ -900,15 +900,17 @@ function viewLines(){
   lines.forEach((l,i)=>{
     const s=lineSugg(g,ds,l),hm=new Set(s.hitM),hx=new Set(s.hitX),p=popularity(g,l.main,ds),lk=lockedDates(g,l);
     h+=`<div class="card"><div class="lhead"><b>Line ${i+1}</b><div class="row"><button class="ibtn" data-act="checkline" data-i="${i}">Check</button>${lk.length?'':`<button class="ibtn" data-act="editline" data-i="${i}">Edit</button><button class="ibtn" data-act="delline" data-i="${i}">✕</button>`}</div></div>
-    ${rowBalls(g,l.main,l.extra,{mark:lk.length?null:(n,isX)=>(isX?hx:hm).has(n)?'hit':''})}`;
+    ${rowBalls(g,l.main,l.extra,{mark:lk.length||s.kept?null:(n,isX)=>(isX?hx:hm).has(n)?'hit':''})}`;
     if(lk.length){h+=`<p class="small" style="margin:10px 0 0"><span class="lockbadge">🔒 Locked in</span> for ${lk.map(shortDate).join(', ')}. It can't be changed until ${lk.length>1?'those draws have':'that draw has'} happened.</p>`}
     else if(s.none)h+=`<p class="small" style="margin:10px 0 0">✅ None came up on ${shortDate(ls[0].date)} — keep it as it is.</p>`;
+    else if(s.kept){const gone=[...s.hitM,...s.hitX.map(n=>n+'★')];
+      h+=`<div class="row" style="margin-top:10px;justify-content:space-between"><span class="small">🙈 Keeping ${gone.join(', ')} for the next draw — your call. It's as likely as any other number.</span><button class="ibtn" data-act="unkeepline" data-i="${i}">Show swap</button></div>`}
     else{
       const nm=new Set(s.newM),nx=new Set(s.newX),gone=[...s.hitM,...s.hitX.map(n=>n+'★')];
       h+=`<div class="arrow">↓ ${gone.join(', ')} came up — for the next draw:</div>
       ${rowBalls(g,s.main,s.extra,{mark:(n,isX)=>(isX?nx:nm).has(n)?'new':''})}
       ${s.newM.length+s.newX.length<s.hitM.length+s.hitX.length?`<p class="small" style="color:var(--warn)">Not enough numbers left to replace them all.</p>`:''}
-      <div class="row" style="margin-top:12px"><button class="btn" data-act="acceptline" data-i="${i}">Use these</button><button class="btn ghost" data-act="rerollline" data-i="${i}">🎲 Re-roll</button></div>`;
+      <div class="row" style="margin-top:12px"><button class="btn" data-act="acceptline" data-i="${i}">Use these</button><button class="btn ghost" data-act="rerollline" data-i="${i}">🎲 Re-roll</button><button class="btn ghost" data-act="keepline" data-i="${i}">Use anyway</button></div>`;
     }
     h+=`<div class="note">Popularity ${p.score}/100 · <span class="pill p-${p.band}">${{low:'Low',med:'Medium',high:'High'}[p.band]}</span></div></div>`;
   });
@@ -1395,6 +1397,8 @@ document.addEventListener('click',async e=>{
     if(a==='delline'){if(!confirm(`Delete Line ${li+1}?`))return;L.splice(li,1);saveLines()}
     if(a==='acceptline'){const s=L[li].sugg;if(s&&!s.none){L[li]={main:s.main,extra:s.extra};saveLines();toast('Line updated ✨')}}
     if(a==='rerollline'){delete L[li].sugg;saveLines()}
+    // Overrule the rule for this draw: keep the line as it is. lineSugg makes a fresh suggestion when the next draw arrives
+    if(a==='keepline'||a==='unkeepline'){const s=L[li].sugg;if(s&&!s.none){s.kept=a==='keepline';saveLines()}}
     if(a==='keepgen'){const l=state.gen[li];if(L.length>=MAX_LINES){toast(`Up to ${MAX_LINES} lines`);return}L.push({main:l.main,extra:l.extra});saveLines();toast(`Saved as Line ${L.length}`)}
     if(a==='keeppaper'){const p=onPaperLine(g,draws(g));if(L.length>=MAX_LINES){toast(`Up to ${MAX_LINES} lines`);return}
       L.push({main:p.mains.map(b=>b.x).sort((x,y)=>x-y),extra:p.stars.map(b=>b.x).sort((x,y)=>x-y)});saveLines();toast(`Saved as Line ${L.length}`)}
