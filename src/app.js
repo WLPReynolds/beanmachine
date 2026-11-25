@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.3.15';
+const APP_VERSION='1.3.16';
 
 /* ---------- Game definitions ---------- */
 // "since" = first draw of the current format: Lotto went to 59 balls in Oct 2015; EuroMillions to 12 Lucky Stars in Sep 2016.
@@ -1020,6 +1020,34 @@ function dayCard(g,ds){
   return h+`<div class="note">A fun look back — none of this changes the next draw.</div></div>`;
 }
 
+/* ---------- By month: most drawn in each calendar month, all years together ---------- */
+const MONTH_NAMES=['January','February','March','April','May','June','July','August','September','October','November','December'];
+const drawMonth=d=>+d.date.slice(5,7)-1;
+function monthCells(g,xs,cnt,star){
+  return `<div class="mgrid">${xs.map(x=>`<div class="fcell">${ball(x,g,{star,sm:true})}<span>${cnt[x]}×</span></div>`).join('')}</div>`;
+}
+function monthCard(g,ds){
+  const withBonus=!g.sepPool&&settings.bonusCounts;
+  const nums=n=>[...Array(n).keys()].map(i=>i+1);
+  let h=`<div class="card"><h2>🗓️ By month</h2><p class="small muted" style="margin-top:0">The most drawn ${g.sepPool?'numbers and stars':'balls'} in each calendar month, with every year in this window added together${g.sepPool?'':`, counting both rounds${withBonus?' and the bonus ball (Settings)':''}`}. The number under each ball is how many times it came out in that month.</p>`;
+  MONTH_NAMES.forEach((nm,mi)=>{
+    const dd=ds.filter(d=>drawMonth(d)===mi),m=Array(g.mainMax+1).fill(0),st=Array(g.extraMax+1).fill(0);
+    dd.forEach(d=>{d.main.forEach(x=>m[x]++);if(withBonus)(d.extra||[]).forEach(x=>m[x]++);if(g.sepPool)(d.extra||[]).forEach(x=>st[x]++)});
+    const dates=new Set(dd.map(d=>d.date)).size,key=`month:${g.key}:${mi}`;
+    h+=`<h3 class="dayh">${nm}</h3>`;
+    if(!dd.length){h+=`<p class="small muted" style="margin:0">No ${nm} draws in this window yet.</p>`;return}
+    const block=(r,cnt,star,k)=>{
+      const open=state.open.has(k);
+      const tie=r.tied.length?`<button class="tie" data-grp="${k}" aria-expanded="${open}">+${r.tied.length} tied ${open?'▴':'▾'}</button>`:'';
+      return monthCells(g,r.shown,cnt,star)+(open&&r.tied.length?monthCells(g,r.tied,cnt,star):'')+(tie?`<div style="margin-top:6px">${tie}</div>`:'');
+    };
+    h+=`<div class="note" style="margin-top:0">${dd.length} draw${dd.length===1?'':'s'}${dates!==dd.length?` on ${dates} date${dates===1?'':'s'}`:''}</div>`;
+    h+=block(rankTies(nums(g.mainMax),m,g.main,1),m,false,key);
+    if(g.sepPool)h+=block(rankTies(nums(g.extraMax),st,g.extra,1),st,true,key+':s');
+  });
+  return h+`<div class="note">A fun look back — the calendar can't change which balls come out.</div></div>`;
+}
+
 /* ---------- What chance predicts: droughts, consecutive numbers, sums ---------- */
 // Bars of what happened, with a white mark where chance puts each one (rows: {l: label, obs: %, exp: %})
 function chanceBars(rows){
@@ -1242,6 +1270,7 @@ function viewStats(){
   <div class="note">A fun look back — none of this changes the next draw.</div></div>`;
   h+=droughtCard(g,ds,isStar);
   h+=dayCard(g,ds);
+  h+=monthCard(g,ds);
   h+=`<div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Every ${isStar?'star':'number'}</h2><div class="chips">${[['num','1→'+N],['freq','By count']].map(([v,l])=>`<button class="chip ${state.statSort===v?'on':''}" data-sort="${v}">${l}</button>`).join('')}</div></div>
   <div class="fgrid" style="margin-top:12px">${order.map(x=>`<div class="fcell">${isStar?ball(x,g,{star:true,sm:true}):ball(x,g,{sm:true})}<span>${cnt[x]}</span><div class="fbar"><i style="width:${mx===mn?50:((cnt[x]-mn)/(mx-mn)*100)}%"></i></div></div>`).join('')}</div></div>`;
   if(!isStar){

@@ -325,6 +325,33 @@ test('drawMeta labels imported draws by source and leaves API draws alone', () =
   assert.match(drawMeta({ src: 'national-lottery', machine: 'Lotto5', ballSet: 'L1', drawNo: 3219 }), /Machine Lotto5 · Ball set L1 · Draw 3219 · Imported from the official results download/);
 });
 
+test('stats page shows a by-month card with the most drawn balls and their counts for that month', () => {
+  const w = app.window, doc = w.document;
+  for (const [game, size] of [['lotto', 6], ['euromillions', 5]]) {
+    app.get(`state.game='${game}'; state.view='stats'; state.statPool='main'; state.open.clear(); render();`);
+    const card = [...doc.querySelectorAll('#view .card')].find(c => /By month/.test(c.querySelector('h2')?.textContent || ''));
+    assert.ok(card, 'month card present');
+    // It sits straight after the draw-day card
+    assert.match(card.previousElementSibling.querySelector('h2').textContent, /By draw day/);
+    const heads = [...card.querySelectorAll('h3.dayh')].map(h => h.textContent);
+    assert.deepEqual(heads, [...app.get('MONTH_NAMES')]);
+    // Counts shown match the draws in that month
+    const ds = app.get('statWindow(draws())');
+    const withBonus = game === 'lotto' && app.get('settings.bonusCounts');
+    const mi = ds.length ? +ds[0].date.slice(5, 7) - 1 : 0;
+    const cnt = {};
+    ds.filter(d => +d.date.slice(5, 7) - 1 === mi).forEach(d => { d.main.forEach(x => cnt[x] = (cnt[x] || 0) + 1); if (withBonus) (d.extra || []).forEach(x => cnt[x] = (cnt[x] || 0) + 1); });
+    const h = card.querySelectorAll('h3.dayh')[mi];
+    let el = h.nextElementSibling.nextElementSibling; // skip the draw-count note
+    assert.ok(el.classList.contains('mgrid'));
+    const cells = [...el.querySelectorAll('.fcell')];
+    assert.equal(cells.length, size);
+    const top = Math.max(...Object.values(cnt));
+    assert.equal(cells[0].querySelector('span:last-child').textContent, `${top}×`);
+    for (const c of cells) assert.equal(c.querySelector('span:last-child').textContent, `${cnt[+c.querySelector('b').textContent]}×`);
+  }
+});
+
 test('missingRuns finds draw days with no draw, grouped into runs', () => {
   const missingRuns = fn('missingRuns');
   // Lotto: Wed/Sat. 3 Jan 2026 (Sat) and 7 Jan (Wed) missing between 31 Dec 2025 and 10 Jan 2026
