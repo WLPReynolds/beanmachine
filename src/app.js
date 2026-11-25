@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.3.18';
+const APP_VERSION='1.3.19';
 
 /* ---------- Game definitions ---------- */
 // "since" = first draw of the current format: Lotto went to 59 balls in Oct 2015; EuroMillions to 12 Lucky Stars in Sep 2016.
@@ -1052,7 +1052,7 @@ function monthPrizeNote(g,nm,dd,r){
   const pz=`${r.n} prize${r.n===1?'':'s'}`;
   const won=r.total?`<b>${moneyWin(r.total)}</b> from ${pz}${r.unknown?' (some amounts not published)':''}`:`<b>${pz}</b>${r.unknown?' (amounts not published)':''}`;
   const b=r.best,best=g.sepPool?`${b.m} number${b.m===1?'':'s'}${b.st?` + ${b.st} star${b.st===1?'':'s'}`:''}`:`${b.m} number${b.m===1?'':'s'}${b.st?' + bonus':''}`;
-  return `<div class="note">${lead} ${won} in ${of}. Best match: ${best}.</div>`;
+  return `<div class="note">${lead} ${won} in ${of}. Best match in ${nm}: ${best}.</div>`;
 }
 function monthCard(g,ds){
   const withBonus=!g.sepPool&&settings.bonusCounts;
