@@ -103,13 +103,21 @@ test('lastDrawn covers both Lotto rounds, with the bonus following the setting',
   app.get('settings.bonusCounts=true');
 });
 
-test('leastPool keeps ties with the 5th-lowest count and drops exclusions', () => {
+test('leastPool keeps ties with the size-th-lowest count and drops exclusions', () => {
   const g = { mainMax: 8, extraMax: 0 };
   const ds = [{ main: [1, 2, 3], extra: [] }, { main: [1, 2], extra: [] }, { main: [1], extra: [] }];
   // counts: 1→3, 2→2, 3→1, 4..8→0. Five lowest: 4,5,6,7,8 (all 0) — 3 is not tied
-  assert.deepEqual([...fn('leastPool')(g, ds, false, new Set())].sort((a, b) => a - b), [4, 5, 6, 7, 8]);
+  assert.deepEqual([...fn('leastPool')(g, ds, false, new Set(), 5)].sort((a, b) => a - b), [4, 5, 6, 7, 8]);
   // Excluding 4 and 5: 5th-lowest is 2 (count 2), so 3 (count 1) and 2 come in
-  assert.deepEqual([...fn('leastPool')(g, ds, false, new Set([4, 5]))].sort((a, b) => a - b), [2, 3, 6, 7, 8]);
+  assert.deepEqual([...fn('leastPool')(g, ds, false, new Set([4, 5]), 5)].sort((a, b) => a - b), [2, 3, 6, 7, 8]);
+});
+
+test('leastPool defaults to 12 for main numbers and 5 for stars', () => {
+  const g = { mainMax: 20, extraMax: 12 };
+  const ds = [{ main: [1, 2, 3, 4, 5, 6, 7, 8], extra: [1, 2, 3, 4, 5, 6] }];
+  // main: 9..20 (12 numbers) never drawn; stars: 7..12 never drawn, so all six tie with the 5th-lowest
+  assert.deepEqual([...fn('leastPool')(g, ds, false, new Set())].sort((a, b) => a - b), [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
+  assert.deepEqual([...fn('leastPool')(g, ds, true, new Set())].sort((a, b) => a - b), [7, 8, 9, 10, 11, 12]);
 });
 
 test("suggestFor swaps only last-draw numbers, never back into last-draw numbers", () => {

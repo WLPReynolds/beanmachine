@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.3.14';
+const APP_VERSION='1.3.15';
 
 /* ---------- Game definitions ---------- */
 // "since" = first draw of the current format: Lotto went to 59 balls in Oct 2015; EuroMillions to 12 Lucky Stars in Sep 2016.
@@ -248,14 +248,17 @@ function lastDrawn(g,ds){
   if(!g.sepPool){if(settings.bonusCounts)x.forEach(n=>m.add(n));return{m,x:new Set(),ls}}
   return{m,x,ls};
 }
-// Eligible numbers, least drawn first; keep everything tied with the 5th-lowest count
-function leastPool(g,ds,isX,excl){
+// Replacement pool sizes: main numbers use a wider pool so lines don't all converge on the same few numbers;
+// stars keep 5, as there are only 12 of them
+const LEAST_POOL={main:12,extra:5};
+// Eligible numbers, least drawn first; keep everything tied with the size-th-lowest count
+function leastPool(g,ds,isX,excl,size=isX?LEAST_POOL.extra:LEAST_POOL.main){
   const N=isX?g.extraMax:g.mainMax,cnt=Array(N+1).fill(0);
   ds.forEach(d=>(isX?d.extra:d.main).forEach(n=>cnt[n]++));
   const el=[];for(let n=1;n<=N;n++)if(!excl.has(n))el.push(n);
   if(!el.length)return[];
   el.sort((a,b)=>cnt[a]-cnt[b]);
-  const cut=cnt[el[Math.min(4,el.length-1)]];
+  const cut=cnt[el[Math.min(size-1,el.length-1)]];
   return el.filter(n=>cnt[n]<=cut);
 }
 function suggestFor(g,ds,line){
@@ -271,7 +274,7 @@ function suggestFor(g,ds,line){
 }
 // Suggestions are kept until the next draw arrives, so they don't change every time the screen redraws
 function lineSugg(g,ds,line){
-  const base=JSON.stringify([line.main,line.extra,settings.bonusCounts]);
+  const base=JSON.stringify([line.main,line.extra,settings.bonusCounts,LEAST_POOL]);
   if(!line.sugg||line.sugg.forDate!==ds[0].date||line.sugg.base!==base){line.sugg={...suggestFor(g,ds,line),forDate:ds[0].date,base};saveLines()}
   return line.sugg;
 }
