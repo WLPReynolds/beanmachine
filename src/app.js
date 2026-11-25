@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.3.16';
+const APP_VERSION='1.3.17';
 
 /* ---------- Game definitions ---------- */
 // "since" = first draw of the current format: Lotto went to 59 balls in Oct 2015; EuroMillions to 12 Lucky Stars in Sep 2016.
@@ -1026,6 +1026,32 @@ const drawMonth=d=>+d.date.slice(5,7)-1;
 function monthCells(g,xs,cnt,star){
   return `<div class="mgrid">${xs.map(x=>`<div class="fcell">${ball(x,g,{star,sm:true})}<span>${cnt[x]}×</span></div>`).join('')}</div>`;
 }
+// "(2016–2026)", "(2016 to date)" while the month is still running, or "(2026)" for a single year
+function monthYears(dd,mi,now=new Date()){
+  const ys=dd.map(d=>+d.date.slice(0,4)),a=Math.min(...ys),b=Math.max(...ys);
+  if(b===now.getFullYear()&&mi===now.getMonth())return `(${a} to date)`;
+  return a===b?`(${a})`:`(${a}–${b})`;
+}
+// How a line would have done in a set of draws: prizes won, the known total, and the best match
+function linePrizes(g,main,extra,dd){
+  let n=0,total=0,unknown=false,best=null;
+  dd.forEach(d=>{
+    const m=inter(main,d.main),st=g.sepPool?inter(extra,d.extra):(m===5&&d.extra.some(x=>main.includes(x))?1:0);
+    const pr=prizeFor(g,d,m+'+'+st);if(!pr)return;
+    n++;if(pr.known)total+=pr.amount;else unknown=true;
+    if(!best||m>best.m||m===best.m&&st>best.st)best={m,st};
+  });
+  return{n,total,unknown,best};
+}
+function monthPrizeNote(g,nm,dd,r){
+  const lead=`Played as one line in every ${nm} draw${g.sepPool?'':' (each round)'}, these ${g.sepPool?'numbers and stars':'numbers'} would have won`;
+  const of=`${dd.length} draw${dd.length===1?'':'s'}`;
+  if(!r.n)return `<div class="note">${lead} <b>nothing</b> in ${of}.</div>`;
+  const pz=`${r.n} prize${r.n===1?'':'s'}`;
+  const won=r.total?`<b>${moneyWin(r.total)}</b> from ${pz}${r.unknown?' (some amounts not published)':''}`:`<b>${pz}</b>${r.unknown?' (amounts not published)':''}`;
+  const b=r.best,best=g.sepPool?`${b.m} number${b.m===1?'':'s'}${b.st?` + ${b.st} star${b.st===1?'':'s'}`:''}`:`${b.m} number${b.m===1?'':'s'}${b.st?' + bonus':''}`;
+  return `<div class="note">${lead} ${won} in ${of}. Best match: ${best}.</div>`;
+}
 function monthCard(g,ds){
   const withBonus=!g.sepPool&&settings.bonusCounts;
   const nums=n=>[...Array(n).keys()].map(i=>i+1);
@@ -1034,20 +1060,21 @@ function monthCard(g,ds){
     const dd=ds.filter(d=>drawMonth(d)===mi),m=Array(g.mainMax+1).fill(0),st=Array(g.extraMax+1).fill(0);
     dd.forEach(d=>{d.main.forEach(x=>m[x]++);if(withBonus)(d.extra||[]).forEach(x=>m[x]++);if(g.sepPool)(d.extra||[]).forEach(x=>st[x]++)});
     const dates=new Set(dd.map(d=>d.date)).size,key=`month:${g.key}:${mi}`;
-    h+=`<h3 class="dayh">${nm}</h3>`;
-    if(!dd.length){h+=`<p class="small muted" style="margin:0">No ${nm} draws in this window yet.</p>`;return}
+    if(!dd.length){h+=`<h3 class="dayh">${nm}</h3><p class="small muted" style="margin:0">No ${nm} draws in this window yet.</p>`;return}
+    h+=`<h3 class="dayh">${nm} <span class="yrs">${monthYears(dd,mi)}</span></h3>`;
     const block=(r,cnt,star,k)=>{
       const open=state.open.has(k);
       const tie=r.tied.length?`<button class="tie" data-grp="${k}" aria-expanded="${open}">+${r.tied.length} tied ${open?'▴':'▾'}</button>`:'';
       return monthCells(g,r.shown,cnt,star)+(open&&r.tied.length?monthCells(g,r.tied,cnt,star):'')+(tie?`<div style="margin-top:6px">${tie}</div>`:'');
     };
+    const rm=rankTies(nums(g.mainMax),m,g.main,1),rs=g.sepPool?rankTies(nums(g.extraMax),st,g.extra,1):null;
     h+=`<div class="note" style="margin-top:0">${dd.length} draw${dd.length===1?'':'s'}${dates!==dd.length?` on ${dates} date${dates===1?'':'s'}`:''}</div>`;
-    h+=block(rankTies(nums(g.mainMax),m,g.main,1),m,false,key);
-    if(g.sepPool)h+=block(rankTies(nums(g.extraMax),st,g.extra,1),st,true,key+':s');
+    h+=block(rm,m,false,key);
+    if(g.sepPool)h+=block(rs,st,true,key+':s');
+    h+=monthPrizeNote(g,nm,dd,linePrizes(g,rm.shown,rs?rs.shown:[],dd));
   });
-  return h+`<div class="note">A fun look back — the calendar can't change which balls come out.</div></div>`;
+  return h+`<div class="note">A fun look back — the calendar can't change which balls come out. These lines were chosen <i>after</i> seeing the draws they're checked against, which flatters them; in a future draw they'd have the same chance as any other line.</div></div>`;
 }
-
 /* ---------- What chance predicts: droughts, consecutive numbers, sums ---------- */
 // Bars of what happened, with a white mark where chance puts each one (rows: {l: label, obs: %, exp: %})
 function chanceBars(rows){

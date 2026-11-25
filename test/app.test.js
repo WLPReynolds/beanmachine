@@ -334,7 +334,9 @@ test('stats page shows a by-month card with the most drawn balls and their count
     // It sits straight after the draw-day card
     assert.match(card.previousElementSibling.querySelector('h2').textContent, /By draw day/);
     const heads = [...card.querySelectorAll('h3.dayh')].map(h => h.textContent);
-    assert.deepEqual(heads, [...app.get('MONTH_NAMES')]);
+    assert.deepEqual(heads.map(h => h.split(' ')[0]), [...app.get('MONTH_NAMES')]);
+    for (const h of heads) assert.match(h, /^\w+ \(\d{4}(–\d{4}| to date)?\)$|^\w+$/);
+    assert.match(card.textContent, /would have won/);
     // Counts shown match the draws in that month
     const ds = app.get('statWindow(draws())');
     const withBonus = game === 'lotto' && app.get('settings.bonusCounts');
@@ -350,6 +352,29 @@ test('stats page shows a by-month card with the most drawn balls and their count
     assert.equal(cells[0].querySelector('span:last-child').textContent, `${top}×`);
     for (const c of cells) assert.equal(c.querySelector('span:last-child').textContent, `${cnt[+c.querySelector('b').textContent]}×`);
   }
+});
+
+test('monthYears gives a year range, or "to date" while that month is still running', () => {
+  const my = fn('monthYears'), now = new Date('2026-11-25T12:00:00');
+  const dd = ys => ys.map(y => ({ date: `${y}-11-07` }));
+  assert.equal(my(dd([2016, 2020, 2026]), 10, now), '(2016 to date)');
+  assert.equal(my(dd([2016, 2025]).map(d => ({ date: d.date.replace('-11-', '-12-') })), 11, now), '(2016–2025)');
+  assert.equal(my(dd([2016, 2026]).map(d => ({ date: d.date.replace('-11-', '-01-') })), 0, now), '(2016–2026)');
+  assert.equal(my([{ date: '2026-06-13' }], 5, now), '(2026)');
+});
+
+test('linePrizes counts prizes, totals known amounts and keeps the best match', () => {
+  const lp = fn('linePrizes'), g = app.get('GAMES.lotto');
+  const dd = [
+    { date: '2020-01-04', main: [1, 2, 3, 40, 41, 42], extra: [50] },   // 3 → £10
+    { date: '2021-01-02', main: [1, 2, 3, 4, 41, 42], extra: [50] },    // 4 → £50
+    { date: '2022-01-01', main: [1, 30, 31, 40, 41, 42], extra: [2] },  // 1 → nothing
+  ];
+  const r = lp(g, [1, 2, 3, 4, 5, 6], [], dd);
+  assert.equal(r.n, 2);
+  assert.equal(r.total, 60);
+  assert.equal(r.best.m, 4);
+  assert.equal(lp(g, [50, 51, 52, 53, 54, 55], [], dd).n, 0);
 });
 
 test('missingRuns finds draw days with no draw, grouped into runs', () => {
